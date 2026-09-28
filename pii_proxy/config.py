@@ -1,7 +1,10 @@
 import os
 import json
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "config.json")
+if os.getenv("VERCEL"):
+    CONFIG_FILE = "/tmp/config.json"
+else:
+    CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "config.json")
 
 class Config:
     def __init__(self):

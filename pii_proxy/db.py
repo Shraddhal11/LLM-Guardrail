@@ -10,18 +10,17 @@ import sqlalchemy as sa
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
-DB_URL = os.getenv("DATABASE_URL")
+DB_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://neondb_owner:npg_BIrh05EqdNPs@ep-sweet-grass-b3v25j2p-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+)
 if not DB_URL:
-    # Try loading from .env if python-dotenv or environment is present
     try:
         from dotenv import load_dotenv
         load_dotenv()
         DB_URL = os.getenv("DATABASE_URL")
     except Exception:
         pass
-
-if not DB_URL:
-    raise RuntimeError("DATABASE_URL environment variable is required. Please set it in your .env file.")
 
 # Convert postgresql:// to use psycopg2 if needed
 if DB_URL.startswith("postgres://"):
