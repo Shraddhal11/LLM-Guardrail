@@ -1,64 +1,58 @@
-# 🛡️ Compliance + Earned-Authority Governance Runtime for SLM/LLM Agents
+# 🛡️ PII Governance & Anonymization Reverse Proxy Platform
 
-An OpenAI-compatible execution control plane and PII anonymization reverse proxy built for local SLMs/LLMs (such as `nvidia/Qwen3.6-35B-A3B-NVFP4`).
-
----
-
-## 🏛️ System Design & Architecture
-
-### 1. Problem Statement & Architecture Goals
-Organizations deploying local SLMs/LLMs — especially autonomous or semi-autonomous agents that call tools, mutate data, or trigger actions — face three critical governance gaps:
-- **Data Compliance Gap**: Guaranteeing sensitive data (HIPAA Safe Harbor 18 categories & DPDP personal data) does not leak into prompts or return in completions.
-- **Execution Authority Gap**: Ensuring agents only take actions they have currently earned the right to take via dynamic trust scoring and monotonic reduction.
-- **User Accountability Gap**: Providing per-user visibility into token usage, violation records, and effective vs. wasteful model usage.
-
-### 2. Execution Layer Architecture Diagram
-```
-                     +---------------------------------------+
-                     |         Agent / Client (Cline)        |
-                     +---------------------------------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |    Governance Control Plane Proxy     |
-                     |         (http://localhost:8000)       |
-                     +---------------------------------------+
-                        |                 |               |
-                        v                 v               v
-            +-------------------+ +---------------+ +--------------------+
-            | PII Anonymizer    | | Earned        | | Tamper-Evident     |
-            | Dual-Engine       | | Authority     | | Audit Hash-Chain |
-            | (15 Categories)   | | Control Plane | | (data/store.json)|
-            +-------------------+ +---------------+ +--------------------+
-                                         |
-                                         v (Sanitized Payload)
-                     +---------------------------------------+
-                     |       Shared AI GPU Node Server       |
-                     | (nvidia/Qwen3.6-35B-A3B-NVFP4)       |
-                     +---------------------------------------+
-```
+An OpenAI-compatible execution control plane and PII anonymization reverse proxy built for local SLMs/LLMs (such as `nvidia/Qwen3.6-35B-A3B-NVFP4`) integrated with **Neon PostgreSQL Database** & **Clerk Auth**.
 
 ---
 
-## 🚀 Quick Setup Guide
+## 🐳 Running with Docker
 
-### 1. GPU Node & Upstream Configuration
-* **Upstream Base URL**: `https://ai-gpu-node.tailfa114b.ts.net/api/v1`
-* **Default Model ID**: `nvidia/Qwen3.6-35B-A3B-NVFP4`
-* **Embedding Model ID**: `BAAI/bge-small-en-v1.5`
-
-### 2. Start Local Governance Proxy Server
+### Option 1: Docker Compose (Recommended)
 ```bash
-./start_proxy.sh
+# Build and run containerized platform on port 8000 & port 80
+docker compose up --build -d
 ```
-The proxy server will start listening at: **`http://localhost:8000`**
 
-### 3. Connect Cline (VS Code Extension)
-In VS Code -> Open **Cline** Settings -> Configure API Provider:
-* **API Provider**: `OpenAI Compatible`
-* **Base URL**: `http://localhost:8000/v1`
-* **API Key**: `<Your OpenWebUI API Key>`
-* **Model ID**: `nvidia/Qwen3.6-35B-A3B-NVFP4`
+### Option 2: Docker Build & Run
+```bash
+# 1. Build image
+docker build -t pii-governance-proxy .
+
+# 2. Run container
+docker run -d -p 8000:8000 -p 80:8000 \
+  -e DATABASE_URL="postgresql://neondb_owner:npg_BIrh05EqdNPs@ep-sweet-grass-b3v25j2p-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require" \
+  -e UPSTREAM_BASE_URL="https://ai-gpu-node.tailfa114b.ts.net/api/v1" \
+  -e DEFAULT_MODEL_ID="nvidia/Qwen3.6-35B-A3B-NVFP4" \
+  --name pii-proxy pii-governance-proxy
+```
+
+---
+
+## 🗄️ Neon PostgreSQL Database & Clerk Integration
+
+* **Neon PostgreSQL Connection**:
+  `postgresql://neondb_owner:npg_BIrh05EqdNPs@ep-sweet-grass-b3v25j2p-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require`
+
+* **Clerk Auth Publishable Key**:
+  `VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk`
+
+* **PostgreSQL Schemas**:
+  - `users`: Stores `clerk_user_id`, `email`, `name`, `user_uuid`, `api_key`, `trust_score`
+  - `query_logs`: Stores request payloads, original vs anonymized prompts, `pii_count`, `latency_ms`, SHA-256 hash chains
+  - `pii_detected_items`: Stores individual PII entities detected (`category_name`, `entity_type`, `placeholder_token`, `confidence`)
+
+---
+
+## 🔗 User Identification & Proxy URL Links
+
+Each user gets a personalized proxy URL identified by their unique `user_uuid`:
+
+- **Proxy URL**: `http://localhost:8000/proxy/{user_uuid}/v1`
+- **Short URL (Port 80)**: `http://localhost:80/{user_uuid}/v1`
+
+When configured in **Cline Settings**:
+- **API Provider**: `OpenAI Compatible`
+- **Base URL**: `http://localhost:8000/proxy/{user_uuid}/v1`
+- **Model ID**: `nvidia/Qwen3.6-35B-A3B-NVFP4`
 
 ---
 
@@ -79,20 +73,3 @@ In VS Code -> Open **Cline** Settings -> Configure API Provider:
 13. **Device Identifiers**: MAC addresses (`00:1B:44:11:3A:B7`), UUIDs, IMEI numbers, Serial Numbers
 14. **Web URLs**: HTTP/HTTPS URIs and web domains
 15. **IP Address Numbers**: IPv4 (`192.168.1.1`) and IPv6 addresses
-
----
-
-## 📊 Features & Persistence
-
-* **Sub-Millisecond PII Anonymization**: Fast regex & contextual pattern engine (< 0.5 ms overhead per request).
-* **Bi-directional Session Vault**: Token replacement (`[NAME_1]`, `[EMAIL_1]`, `[PHONE_1]`) with automatic re-hydration of completion stream outputs.
-* **Persistent Disk Audit Store**: All receipts and stats are saved to `data/audit_store.json` with SHA-256 tamper-evident hash chains.
-* **Interactive Control Dashboard**: Access `http://localhost:8000/` to test prompt anonymization live, view detected PII counters, and monitor audit receipts.
-
----
-
-## 📁 Workspace Documents
-
-* **System Design Spec**: [`Hackathon_Problem_Statement_LLM_Guardrail.md`](file:///Users/bhushan/Projects/Hackathon/Hackathon_Problem_Statement_LLM_Guardrail.md)
-* **Audit Receipt Store**: [`data/audit_store.json`](file:///Users/bhushan/Projects/Hackathon/data/audit_store.json)
-* **Proxy Core Modules**: [`pii_proxy/main.py`](file:///Users/bhushan/Projects/Hackathon/pii_proxy/main.py), [`pii_proxy/pii_detector.py`](file:///Users/bhushan/Projects/Hackathon/pii_proxy/pii_detector.py)

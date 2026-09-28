@@ -175,8 +175,7 @@ class PIIDetector:
             re.IGNORECASE
         )
         self.regex_city_county = re.compile(
-            r'(?:City|County|Town|Locality)[:#\s]+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*',
-            re.IGNORECASE
+            r'(?:City|County|Town|Locality)[:#\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         )
 
         # 3. Dates directly related to an individual (Birth, Admission, Discharge, Death)
@@ -189,11 +188,10 @@ class PIIDetector:
             re.IGNORECASE
         )
 
-        # 1. Names (Titles, Prefixes, Patient/Employee Context)
+        # 1. Names (Titles, Prefixes, Patient/Employee Context) - Strictly Case Sensitive
         self.regex_name_context = re.compile(
-            r'(?:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|User|Doctor)[:#\s]+'
-            r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)',
-            re.IGNORECASE
+            r'(?:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor)[:#\s]+'
+            r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'
         )
 
     def detect(self, text: str) -> List[PIIMatch]:

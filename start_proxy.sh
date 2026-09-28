@@ -8,9 +8,11 @@ echo "==========================================================================
 cd "$(dirname "$0")"
 source venv/bin/activate
 
-export UPSTREAM_BASE_URL="https://ai-gpu-node.tailfa114b.ts.net/api/v1"
-export DEFAULT_MODEL_ID="nvidia/Qwen3.6-35B-A3B-NVFP4"
-export EMBEDDING_MODEL_ID="BAAI/bge-small-en-v1.5"
-export PORT="8000"
+# Load environment variables from .env file
+if [ -f .env ]; then
+    set -o allexport
+    source .env
+    set +o allexport
+fi
 
 python3 -m uvicorn pii_proxy.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude "data/*"

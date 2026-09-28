@@ -19,11 +19,11 @@ def test_all_15_pii_categories():
         # 3. Dates
         ("3. Dates", "Patient DOB: 04/12/1985, admitted on 2023-08-15 for observation.", 3, ["INDIVIDUAL_DATE"]),
         # 4. Phone numbers
-        ("4. Telephone", "Call customer service at 555-0199 or +1 (800) 555-0142.", 4, ["PHONE"]),
+        ("4. Telephone", "Call customer service at 9168227486.", 4, ["PHONE"]),
         # 5. Fax numbers
         ("5. Fax", "Send medical release form via Fax: (555) 234-5678", 5, ["FAX"]),
         # 6. Email addresses
-        ("6. Email", "Send confidential reports to alice.smith@hospital.org", 6, ["EMAIL"]),
+        ("6. Email", "Send confidential reports to bhushan@uplight.com", 6, ["EMAIL"]),
         # 7. SSN
         ("7. SSN", "Verification required for SSN: 123-45-6789", 7, ["SSN"]),
         # 8. MRN

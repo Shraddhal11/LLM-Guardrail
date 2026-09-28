@@ -3,24 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PII Anonymization & Governance Proxy - Hackathon Control Plane</title>
+    <title>PII Governance & Execution Control Plane for AI Agents</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Official Clerk JS Library with UI Components -->
+    <script 
+        async 
+        crossorigin="anonymous" 
+        data-clerk-publishable-key="{{ clerk_publishable_key }}" 
+        src="{{ clerk_js_url }}" 
+        type="text/javascript">
+    </script>
+
     <style>
         :root {
-            --bg-primary: #0b0f19;
-            --bg-card: rgba(18, 26, 43, 0.7);
-            --bg-card-border: rgba(255, 255, 255, 0.08);
+            --bg-primary: #060913;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --bg-card-border: rgba(255, 255, 255, 0.09);
             --accent-cyan: #00f2fe;
-            --accent-blue: #4facfe;
-            --accent-purple: #7f00ff;
-            --text-primary: #f1f5f9;
+            --accent-blue: #38bdf8;
+            --accent-purple: #8b5cf6;
+            --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --text-muted: #64748b;
             --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
         }
 
         * {
@@ -30,14 +38,13 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Outfit', sans-serif;
             background-color: var(--bg-primary);
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(127, 0, 255, 0.08) 0%, transparent 40%);
+                radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
             color: var(--text-primary);
             min-height: 100vh;
-            padding: 2rem;
             line-height: 1.5;
         }
 
@@ -46,8 +53,8 @@
             justify-content: space-between;
             align-items: center;
             max-width: 1300px;
-            margin: 0 auto 2rem auto;
-            padding-bottom: 1.5rem;
+            margin: 0 auto;
+            padding: 1.8rem 2rem;
             border-bottom: 1px solid var(--bg-card-border);
         }
 
@@ -58,23 +65,22 @@
         }
 
         .brand-logo {
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 700;
-            font-size: 1.2rem;
+            font-size: 1.5rem;
             color: #fff;
-            box-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+            box-shadow: 0 0 25px rgba(0, 242, 254, 0.4);
         }
 
         .brand-title h1 {
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             font-weight: 700;
-            background: linear-gradient(to right, #fff, var(--text-secondary));
+            background: linear-gradient(to right, #fff, var(--accent-blue));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -84,57 +90,150 @@
             color: var(--text-secondary);
         }
 
-        .status-badge {
+        .auth-nav {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: var(--success);
-            padding: 0.4rem 0.9rem;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 500;
+            gap: 1rem;
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: var(--success);
-            box-shadow: 0 0 10px var(--success);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.4; }
-            100% { opacity: 1; }
-        }
-
-        .main-container {
-            max-width: 1300px;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-        }
-
-        .card {
-            background: var(--bg-card);
-            backdrop-filter: blur(16px);
+        .btn-btn-nav {
+            background: transparent;
+            color: var(--text-primary);
             border: 1px solid var(--bg-card-border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 0.6rem 1.4rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
-        .full-width {
-            grid-column: 1 / -1;
+        .btn-btn-nav:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
         }
 
-        .card-title {
-            font-size: 1.1rem;
+        .btn-primary-cta {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            color: #fff;
+            border: none;
+            padding: 0.65rem 1.6rem;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(0, 242, 254, 0.3);
+            transition: all 0.2s;
+        }
+
+        .btn-primary-cta:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 242, 254, 0.45);
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-box {
+            position: relative;
+            background: #0f172a;
+            border: 1px solid var(--bg-card-border);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            max-width: 480px;
+            width: 90%;
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .modal-close-btn:hover {
+            color: #fff;
+        }
+
+        /* Landing Page Hero */
+        .hero-section {
+            max-width: 1200px;
+            margin: 4rem auto 3rem auto;
+            text-align: center;
+            padding: 0 2rem;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 242, 254, 0.1);
+            border: 1px solid rgba(0, 242, 254, 0.3);
+            color: var(--accent-cyan);
+            padding: 0.4rem 1.2rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-title {
+            font-size: 3.2rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 1.2rem;
+            background: linear-gradient(to right, #ffffff, #93c5fd, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-subtitle {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            max-width: 760px;
+            margin: 0 auto 2.5rem auto;
+        }
+
+        .hero-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1.2rem;
+            margin-bottom: 3.5rem;
+        }
+
+        /* Demo Card Preview */
+        .demo-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 900px;
+            margin: 0 auto 4rem auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+            text-align: left;
+        }
+
+        .demo-header {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
             font-weight: 600;
             margin-bottom: 1rem;
             display: flex;
@@ -142,104 +241,107 @@
             justify-content: space-between;
         }
 
-        .card-title span {
-            color: var(--accent-cyan);
+        .demo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
         }
 
-        /* Playground styles */
-        textarea {
-            width: 100%;
-            height: 140px;
-            background: rgba(0, 0, 0, 0.3);
+        .demo-box {
+            background: #030712;
             border: 1px solid var(--bg-card-border);
-            border-radius: 10px;
-            padding: 1rem;
-            color: var(--text-primary);
+            border-radius: 12px;
+            padding: 1.2rem;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
-            resize: vertical;
-            outline: none;
-            transition: border-color 0.2s;
+            font-size: 0.88rem;
+            min-height: 100px;
+            word-break: break-all;
         }
 
-        textarea:focus {
-            border-color: var(--accent-cyan);
+        .demo-box.before {
+            color: #fca5a5;
         }
 
-        .preset-buttons {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-            flex-wrap: wrap;
+        .demo-box.after {
+            color: #a7f3d0;
         }
 
-        .btn-preset {
-            background: rgba(255, 255, 255, 0.05);
+        /* Features Grid */
+        .features-grid {
+            max-width: 1200px;
+            margin: 0 auto 5rem auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            padding: 0 2rem;
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.02);
             border: 1px solid var(--bg-card-border);
-            color: var(--text-secondary);
-            padding: 0.3rem 0.7rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            cursor: pointer;
+            border-radius: 16px;
+            padding: 1.8rem;
             transition: all 0.2s;
         }
 
-        .btn-preset:hover {
-            background: rgba(0, 242, 254, 0.15);
-            color: var(--accent-cyan);
+        .feature-card:hover {
             border-color: rgba(0, 242, 254, 0.3);
+            transform: translateY(-3px);
         }
 
-        .btn-action {
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-title {
+            font-size: 1.1rem;
+            font-weight: 700;
             color: #fff;
-            border: none;
-            padding: 0.7rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 1rem;
-            transition: opacity 0.2s;
+            margin-bottom: 0.5rem;
         }
 
-        .btn-action:hover {
-            opacity: 0.9;
-        }
-
-        .output-box {
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid var(--bg-card-border);
-            border-radius: 10px;
-            padding: 1rem;
-            min-height: 140px;
-            font-family: 'JetBrains Mono', monospace;
+        .feature-desc {
             font-size: 0.88rem;
-            white-space: pre-wrap;
-            word-break: break-word;
-            color: #a7f3d0;
-            overflow-y: auto;
-            max-height: 250px;
+            color: var(--text-secondary);
         }
 
-        .matches-tags {
+        /* Dashboard Styles */
+        .dashboard-container {
+            display: none;
+            max-width: 1300px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .card-dashboard {
+            background: var(--bg-card);
+            backdrop-filter: blur(18px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 18px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1.5rem;
+        }
+
+        .proxy-link-box {
+            background: linear-gradient(135deg, rgba(0, 242, 254, 0.12), rgba(139, 92, 246, 0.18));
+            border: 1px solid rgba(0, 242, 254, 0.4);
+            border-radius: 16px;
+            padding: 1.4rem;
+            margin-bottom: 1.5rem;
             display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            margin-top: 0.75rem;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .tag {
-            background: rgba(127, 0, 255, 0.2);
-            border: 1px solid rgba(127, 0, 255, 0.4);
-            color: #d8b4fe;
-            padding: 0.25rem 0.6rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 500;
+        .proxy-url-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.05rem;
+            color: #7dd3fc;
+            margin-top: 0.3rem;
         }
 
-        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -250,14 +352,14 @@
         .stat-card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--bg-card-border);
-            border-radius: 12px;
-            padding: 1rem;
+            border-radius: 14px;
+            padding: 1.2rem;
             text-align: center;
         }
 
         .stat-value {
-            font-size: 1.6rem;
-            font-weight: 700;
+            font-size: 1.8rem;
+            font-weight: 800;
             color: var(--accent-cyan);
         }
 
@@ -266,22 +368,35 @@
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.2rem;
+            margin-top: 0.3rem;
         }
 
-        /* Config Instructions Box */
-        .code-snippet {
-            background: #050811;
+        textarea {
+            width: 100%;
+            height: 120px;
+            background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--bg-card-border);
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 1rem;
+            color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.82rem;
-            color: #7dd3fc;
-            overflow-x: auto;
+            font-size: 0.9rem;
+            resize: vertical;
+            outline: none;
         }
 
-        /* Table */
+        .btn-action {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: #fff;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -290,44 +405,205 @@
 
         th {
             text-align: left;
-            padding: 0.75rem;
+            padding: 0.8rem;
             color: var(--text-secondary);
             border-bottom: 1px solid var(--bg-card-border);
             font-weight: 500;
         }
 
         td {
-            padding: 0.75rem;
+            padding: 0.8rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             font-family: 'JetBrains Mono', monospace;
         }
 
-        .hash-code {
-            color: var(--text-muted);
+        .tag {
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            color: #d8b4fe;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
             font-size: 0.75rem;
+            margin-right: 0.3rem;
+            display: inline-block;
         }
     </style>
 </head>
 <body>
 
+    <!-- Clerk Modal Overlay -->
+    <div id="clerk-modal-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <button class="modal-close-btn" onclick="closeClerkModal()">✕</button>
+            <div id="clerk-mount-container"></div>
+        </div>
+    </div>
+
+    <!-- Query Detail Inspection Modal -->
+    <div id="query-detail-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 880px; width: 92%; max-height: 90vh; overflow-y: auto;">
+            <button class="modal-close-btn" onclick="closeQueryDetailModal()">✕</button>
+            <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:1.2rem;">
+                <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); display:flex; align-items:center; justify-content:center; font-size:1.2rem;">🔍</div>
+                <div>
+                    <h2 style="font-size:1.3rem; color:#fff; margin:0;" id="detail-request-id">Request Details</h2>
+                    <p style="font-size:0.8rem; color:var(--text-secondary); margin:0;" id="detail-meta">Endpoint & Execution Metadata</p>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:0.8rem; margin-bottom:1.5rem; background:rgba(255,255,255,0.03); padding:1rem; border-radius:12px; border:1px solid var(--bg-card-border);">
+                <div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary);">PII COUNT</div>
+                    <div style="font-size:1.3rem; font-weight:800; color:var(--accent-cyan);" id="detail-pii-count">0</div>
+                </div>
+                <div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary);">LATENCY</div>
+                    <div style="font-size:1.3rem; font-weight:800; color:#34d399;" id="detail-latency">0 ms</div>
+                </div>
+                <div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary);">ACTION MODE</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:#d8b4fe;" id="detail-action-mode">ANONYMIZE</div>
+                </div>
+                <div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary);">MODEL</div>
+                    <div style="font-size:0.85rem; font-weight:600; color:#38bdf8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" id="detail-model">Qwen3.6-35B</div>
+                </div>
+            </div>
+
+            <!-- Prompts Side-by-Side -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
+                <div>
+                    <div style="font-size:0.85rem; font-weight:700; color:#fca5a5; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+                        <span>🔴 Full Original Prompt (Raw)</span>
+                        <button onclick="copyDetailText('detail-orig-prompt')" style="background:rgba(255,255,255,0.05); border:1px solid var(--bg-card-border); color:var(--text-secondary); border-radius:6px; padding:2px 8px; cursor:pointer; font-size:0.75rem;">📋 Copy</button>
+                    </div>
+                    <div id="detail-orig-prompt" style="background:#020617; border:1px solid rgba(248,113,113,0.3); border-radius:10px; padding:1rem; color:#fca5a5; font-family:'JetBrains Mono', monospace; font-size:0.85rem; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow-y:auto;"></div>
+                </div>
+                <div>
+                    <div style="font-size:0.85rem; font-weight:700; color:#a7f3d0; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+                        <span>🟢 Full Anonymized Payload (Sent Upstream)</span>
+                        <button onclick="copyDetailText('detail-anon-prompt')" style="background:rgba(255,255,255,0.05); border:1px solid var(--bg-card-border); color:var(--text-secondary); border-radius:6px; padding:2px 8px; cursor:pointer; font-size:0.75rem;">📋 Copy</button>
+                    </div>
+                    <div id="detail-anon-prompt" style="background:#020617; border:1px solid rgba(52,211,153,0.3); border-radius:10px; padding:1rem; color:#a7f3d0; font-family:'JetBrains Mono', monospace; font-size:0.85rem; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow-y:auto;"></div>
+                </div>
+            </div>
+
+            <!-- Detected Entities Breakdown -->
+            <div style="margin-bottom:1.5rem;">
+                <div style="font-size:0.9rem; font-weight:700; color:#fff; margin-bottom:0.6rem;">🏷️ Detected PII Items Breakdown</div>
+                <div id="detail-items-container" style="background:rgba(0,0,0,0.3); border:1px solid var(--bg-card-border); border-radius:10px; padding:0.8rem; max-height:160px; overflow-y:auto;"></div>
+            </div>
+
+            <!-- SHA-256 Hash Chain Receipt -->
+            <div style="background:rgba(15,23,42,0.9); border:1px solid rgba(0,242,254,0.3); border-radius:10px; padding:0.9rem; font-family:'JetBrains Mono', monospace; font-size:0.78rem;">
+                <div style="color:var(--accent-cyan); font-weight:700; margin-bottom:0.3rem;">🔒 SHA-256 Tamper-Evident Hash Chain Receipt</div>
+                <div style="color:var(--text-secondary); margin-bottom:2px;">Current Hash: <span id="detail-current-hash" style="color:#fff;"></span></div>
+                <div style="color:var(--text-secondary);">Previous Hash: <span id="detail-previous-hash" style="color:var(--text-muted);"></span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header Navigation -->
     <header>
         <div class="brand">
             <div class="brand-logo">🛡️</div>
             <div class="brand-title">
-                <h1>PII Compliance Proxy</h1>
-                <p>HIPAA Safe Harbor (18 Categories) & DPDP Guardrail Execution Engine</p>
+                <h1>PII Governance Platform</h1>
+                <p>HIPAA Safe Harbor & DPDP Execution Engine</p>
             </div>
         </div>
-        <div class="status-badge">
-            <div class="status-dot"></div>
-            Upstream: GPU Node Active
+
+        <div class="auth-nav">
+            <div id="user-button-container"></div>
+            <button id="btn-header-signin" class="btn-btn-nav" onclick="openSignIn()">Sign In</button>
+            <button id="btn-header-signup" class="btn-primary-cta" onclick="openSignUp()">Get Started / Sign Up</button>
         </div>
     </header>
 
-    <div class="main-container">
+    <!-- UNAUTHENTICATED LANDING PAGE -->
+    <div id="landing-page">
+        <section class="hero-section">
+            <div class="hero-badge">
+                ✨ Powered by Neon PostgreSQL & Clerk Auth
+            </div>
+            <h1 class="hero-title">
+                HIPAA & DPDP Compliance Execution Engine for AI Agents
+            </h1>
+            <p class="hero-subtitle">
+                Intercept, anonymize, and audit LLM prompts in real-time before sensitive data (Names, SSNs, Medical Records, IPs, Phone Numbers) reaches external GPU nodes.
+            </p>
+            <div class="hero-buttons">
+                <button class="btn-primary-cta" style="padding:0.9rem 2.2rem; font-size:1.05rem;" onclick="openSignUp()">
+                    🚀 Sign Up & Get Your Proxy Link
+                </button>
+                <button class="btn-btn-nav" style="padding:0.9rem 2rem; font-size:1rem;" onclick="openSignIn()">
+                    Sign In
+                </button>
+            </div>
+        </section>
 
-        <!-- Stats Overview -->
-        <div class="full-width stats-grid">
+        <!-- Live Demo Interactive Card -->
+        <div class="demo-card">
+            <div class="demo-header">
+                <span style="font-weight:700; color:#fff; font-size:1rem;">⚡ Interactive PII Compliance Action Simulator</span>
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <span style="font-size:0.85rem; color:var(--text-secondary);">Select Action Mode:</span>
+                    <select id="landingActionMode" onchange="updateGlobalActionMode(this.value)" style="background:#060913; border:1px solid var(--accent-cyan); color:#00f2fe; border-radius:8px; padding:6px 12px; font-weight:700; font-size:0.88rem; outline:none; cursor:pointer; box-shadow:0 0 12px rgba(0,242,254,0.2);">
+                        <option value="ANONYMIZE" selected>ANONYMIZE (Bi-directional Tokens)</option>
+                        <option value="REDACT">REDACT (Static [REDACTED])</option>
+                        <option value="HASH">HASH (Cryptographic SHA-256)</option>
+                        <option value="BLOCK">BLOCK (Strict Reject - HTTP 400)</option>
+                        <option value="LOG_ONLY">LOG_ONLY (Pass Raw + Audit Log)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.4rem;">🔴 Input Prompt (Contains PII):</div>
+                <textarea id="landingPromptInput" style="height:70px; margin-bottom:0.8rem;">Doctor Sarah Connor called patient John Doe (DOB: 04/12/1985, SSN: 123-45-6789) at bhushan.chavan@jashds.com and 8999273304</textarea>
+                <button class="btn-action" style="margin-top:0; padding:0.65rem 1.2rem; font-size:0.9rem;" onclick="runLandingInspection()">🔍 Run Selected Action Mode</button>
+            </div>
+            <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.4rem;">🟢 Executed Payload Result:</div>
+                <div id="landingOutput" class="demo-box after">Doctor [NAME_2] called patient [NAME_1] ([INDIVIDUAL_DATE_1], [SSN_1]) at [EMAIL_1] and [PHONE_1]</div>
+                <div id="landingMatches" style="margin-top:0.6rem;"></div>
+            </div>
+        </div>
+
+        <!-- Features Grid -->
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <div class="feature-title">15 Safe Harbor & DPDP Categories</div>
+                <div class="feature-desc">Automatic detection for Names, Addresses, SSNs, Phone, Fax, Email, IP addresses, Dates, MRNs, VINs, Device UUIDs.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">Sub-Millisecond Execution</div>
+                <div class="feature-desc">High-performance dual-engine combining rule-based contextual patterns and SpaCy NER executing in &lt; 0.5 ms.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <div class="feature-title">Tamper-Evident Receipts</div>
+                <div class="feature-desc">SHA-256 cryptographic audit hash-chains saved to Neon PostgreSQL for every prompt inspection.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AUTHENTICATED DASHBOARD -->
+    <div id="authenticated-dashboard" class="dashboard-container">
+        
+        <!-- Personalized Proxy Link Box -->
+        <div class="proxy-link-box">
+            <div>
+                <div style="font-weight: 700; font-size: 1.05rem; color: #fff;">🔑 Your Personal Proxy Endpoint Link (Paste into Cline Settings)</div>
+                <div class="proxy-url-display" id="userProxyUrl">http://localhost:8000/proxy/usr_cd8bef00/v1</div>
+            </div>
+            <button class="btn-primary-cta" style="padding:0.6rem 1.2rem; font-size:0.88rem;" onclick="copyProxyUrl()">📋 Copy Base URL</button>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="stat-requests">0</div>
                 <div class="stat-label">Total Proxied Requests</div>
@@ -341,77 +617,59 @@
                 <div class="stat-label">Compliance Categories</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="color:#34d399;">&lt; 5 ms</div>
-                <div class="stat-label">Proxy Redaction Overhead</div>
+                <div class="stat-value" style="color:#34d399;" id="stat-score">100.0</div>
+                <div class="stat-label">User Trust Score</div>
             </div>
         </div>
 
-        <!-- Cline & OpenAI SDK Setup Instructions -->
-        <div class="card full-width">
-            <div class="card-title">
-                🛠️ How to Connect Cline / OpenAI SDK to this Proxy
+        <!-- Playground Grid -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+            <div class="card-dashboard">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
+                    <div style="font-weight:600;">📝 Test Prompt Input</div>
+                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:var(--text-secondary);">
+                        <span>Action Mode:</span>
+                        <select id="actionModeSelect" onchange="updateGlobalActionMode(this.value)" style="background:#020617; border:1px solid var(--bg-card-border); color:#38bdf8; border-radius:6px; padding:4px 8px; font-weight:600; outline:none; cursor:pointer;">
+                            <option value="ANONYMIZE" selected>ANONYMIZE (Bi-directional Tokens)</option>
+                            <option value="REDACT">REDACT (Static [REDACTED])</option>
+                            <option value="HASH">HASH (Cryptographic SHA-256)</option>
+                            <option value="BLOCK">BLOCK (Reject Violation - 400)</option>
+                            <option value="LOG_ONLY">LOG_ONLY (Pass Raw + Audit Log)</option>
+                        </select>
+                    </div>
+                </div>
+                <textarea id="inputPrompt" placeholder="Type prompt containing PII data...">Patient Bhushan Chavan (DOB: 04/12/1985) email: bhushan.chavan@jashds.com phone: 8999273304</textarea>
+                <button class="btn-action" onclick="runInspection()">🔍 Inspect & Execute Compliance Action</button>
             </div>
-            <div class="code-snippet">
-// In VS Code -> Cline Settings -> API Provider -> Choose "OpenAI Compatible"
-Base URL = http://localhost:8000/v1
-API Key  = (Your OpenWebUI API Key or any token)
-Model ID = nvidia/Qwen3.6-35B-A3B-NVFP4
 
-// Upstream target configured: https://ai-gpu-node.tailfa114b.ts.net/api/v1
+            <div class="card-dashboard">
+                <div style="font-weight:600; margin-bottom:0.8rem;">✨ Payload Result Sent Upstream</div>
+                <div id="anonymizedOutput" style="background:#020617; border:1px solid var(--bg-card-border); padding:1rem; border-radius:10px; min-height:120px; color:#a7f3d0; font-family:'JetBrains Mono', monospace; font-size:0.88rem;">Payload result will appear here...</div>
+                <div id="matchesContainer" style="margin-top:0.8rem;"></div>
             </div>
         </div>
 
-        <!-- Live Interactive Playground: Left (Input) -->
-        <div class="card">
-            <div class="card-title">
-                📝 Test Prompt Input
-            </div>
-            <textarea id="inputPrompt" placeholder="Type prompt containing PII data..."></textarea>
-
-            <div class="preset-buttons">
-                <button class="btn-preset" onclick="loadPreset('patient')">🏥 Healthcare Record</button>
-                <button class="btn-preset" onclick="loadPreset('financial')">💳 Financial / Account</button>
-                <button class="btn-preset" onclick="loadPreset('network')">💻 IT / Network Logs</button>
-            </div>
-
-            <button class="btn-action" onclick="runInspection()">🔍 Inspect & Anonymize Prompt</button>
-        </div>
-
-        <!-- Live Interactive Playground: Right (Anonymized Output) -->
-        <div class="card">
-            <div class="card-title">
-                ✨ Anonymized Payload Sent Upstream
-            </div>
-            <div class="output-box" id="anonymizedOutput">Anonymized payload will appear here...</div>
-            
-            <div style="margin-top: 1rem; font-weight: 500; font-size: 0.85rem; color: var(--text-secondary);">
-                Detected PII Entities:
-            </div>
-            <div class="matches-tags" id="matchesContainer">
-                <span style="font-size:0.8rem; color:var(--text-muted);">No inspection run yet</span>
-            </div>
-        </div>
-
-        <!-- Audit Receipts Log -->
-        <div class="card full-width">
-            <div class="card-title">
-                📜 Hash-Chained Audit Trail & Compliance Receipts
+        <!-- Neon DB Queries Table -->
+        <div class="card-dashboard">
+            <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem;">
+                🗄️ Neon PostgreSQL Query Logs & Tamper-Evident Receipts
             </div>
             <table>
                 <thead>
                     <tr>
-                        <th>Receipt ID</th>
-                        <th>User ID</th>
-                        <th>Action</th>
+                        <th>Request ID</th>
+                        <th>Original Prompt</th>
+                        <th>Anonymized Prompt</th>
                         <th>PII Count</th>
-                        <th>Detected Categories</th>
-                        <th>Hash Chain (SHA256)</th>
+                        <th>Categories Found</th>
+                        <th>Latency</th>
+                        <th>SHA-256 Hash</th>
                     </tr>
                 </thead>
-                <tbody id="auditTableBody">
+                <tbody id="queryTableBody">
                     <tr>
-                        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
-                            No audit receipts logged yet. Send a request or use the playground above.
+                        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                            Loading query logs from Neon PostgreSQL...
                         </td>
                     </tr>
                 </tbody>
@@ -421,83 +679,343 @@ Model ID = nvidia/Qwen3.6-35B-A3B-NVFP4
     </div>
 
     <script>
-        const PRESETS = {
-            patient: `Patient John Doe (DOB: 04/12/1985, SSN: 123-45-6789) was admitted on 2023-08-15 to City Hospital in Springfield 62701. Contact: 555-0199 or john.doe@email.com. Attending physician Dr. Sarah Connor, MRN-987654.`,
-            financial: `Client Alice Smith, Account # 4532-1234-5678-9010. Bank Acct: ACCT-9948271. Driver's License DL-883920. Vehicle VIN 1HGCR2F83HA000000 with License Plate TAG-8921.`,
-            network: `Server log from IP 192.168.1.105 with MAC 00:1B:44:11:3A:B7 and Device UUID 550e8400-e29b-41d4-a716-446655440000 accessing https://internal-portal.company.com/admin`
-        };
+        let currentUserUuid = "usr_cd8bef00";
 
-        function loadPreset(type) {
-            document.getElementById('inputPrompt').value = PRESETS[type];
+        window.addEventListener('load', async () => {
+            await initClerk();
+        });
+
+        async function initClerk() {
+            try {
+                if (window.Clerk) {
+                    if (typeof window.Clerk.load === 'function') {
+                        await window.Clerk.load();
+                    }
+
+                    if (window.Clerk.user) {
+                        const user = window.Clerk.user;
+                        document.getElementById('landing-page').style.display = 'none';
+                        document.getElementById('authenticated-dashboard').style.display = 'block';
+                        document.getElementById('btn-header-signin').style.display = 'none';
+                        document.getElementById('btn-header-signup').style.display = 'none';
+
+                        const userBtnBox = document.getElementById('user-button-container');
+                        if (userBtnBox && window.Clerk.mountUserButton) {
+                            userBtnBox.innerHTML = '';
+                            window.Clerk.mountUserButton(userBtnBox);
+                        }
+
+                        try {
+                            const res = await fetch('/api/users/sync', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    clerk_user_id: user.id,
+                                    email: user.primaryEmailAddress ? user.primaryEmailAddress.emailAddress : '',
+                                    name: user.fullName || user.firstName || 'Developer'
+                                })
+                            });
+                            const userData = await res.json();
+                            currentUserUuid = userData.user_uuid;
+                            document.getElementById('userProxyUrl').textContent = userData.proxy_url;
+                            document.getElementById('stat-score').textContent = (userData.trust_score || 100.0).toFixed(1);
+                        } catch (err) {
+                            console.error('User sync error:', err);
+                        }
+
+                        fetchUserQueries();
+                        fetchUserStats();
+                        setInterval(fetchUserQueries, 3000);
+                        setInterval(fetchUserStats, 3000);
+                    } else {
+                        document.getElementById('landing-page').style.display = 'block';
+                        document.getElementById('authenticated-dashboard').style.display = 'none';
+                    }
+                }
+            } catch (e) {
+                console.error('Clerk load error:', e);
+            }
+        }
+
+        async function openSignIn() {
+            if (!window.Clerk) {
+                alert('Clerk Authentication SDK is loading... Please wait a moment.');
+                return;
+            }
+            try {
+                if (window.Clerk.openSignIn) {
+                    window.Clerk.openSignIn();
+                } else if (window.Clerk.mountSignIn) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignIn(container);
+                }
+            } catch (err) {
+                console.warn('openSignIn error, using modal mount:', err);
+                if (window.Clerk.mountSignIn) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignIn(container);
+                }
+            }
+        }
+
+        async function openSignUp() {
+            if (!window.Clerk) {
+                alert('Clerk Authentication SDK is loading... Please wait a moment.');
+                return;
+            }
+            try {
+                if (window.Clerk.openSignUp) {
+                    window.Clerk.openSignUp();
+                } else if (window.Clerk.mountSignUp) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignUp(container);
+                }
+            } catch (err) {
+                console.warn('openSignUp error, using modal mount:', err);
+                if (window.Clerk.mountSignUp) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignUp(container);
+                }
+            }
+        }
+
+        function closeClerkModal() {
+            document.getElementById('clerk-modal-overlay').style.display = 'none';
+        }
+
+        function copyProxyUrl() {
+            const url = document.getElementById('userProxyUrl').textContent;
+            navigator.clipboard.writeText(url);
+            alert('Copied Proxy Base URL to Clipboard!\n\nPaste into your AI Client / Cline Settings -> Base URL:\n' + url);
         }
 
         async function runInspection() {
             const prompt = document.getElementById('inputPrompt').value;
             if (!prompt) return;
+            const selectEl = document.getElementById('actionModeSelect');
+            const selectedMode = selectEl ? selectEl.value : 'ANONYMIZE';
+
+            // Sync global server action mode first so all proxy requests use this mode
+            await updateGlobalActionMode(selectedMode);
 
             const res = await fetch('/api/test-inspect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt, mode: 'ANONYMIZE' })
+                body: JSON.stringify({ prompt: prompt, mode: selectedMode })
             });
 
             const data = await res.json();
-            document.getElementById('anonymizedOutput').textContent = data.anonymized_prompt;
+            const outputEl = document.getElementById('anonymizedOutput');
+
+            if (data.blocked) {
+                outputEl.style.color = '#fca5a5';
+                outputEl.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                outputEl.textContent = `🚫 REQUEST BLOCKED BY POLICY:\n${data.error || 'Compliance policy violation: Prompt contained sensitive PII.'}`;
+            } else {
+                outputEl.style.color = selectedMode === 'LOG_ONLY' ? '#fde047' : '#a7f3d0';
+                outputEl.style.border = '1px solid var(--bg-card-border)';
+                outputEl.textContent = data.anonymized_prompt;
+            }
 
             const tagsContainer = document.getElementById('matchesContainer');
             tagsContainer.innerHTML = '';
-            if (data.matches.length === 0) {
-                tagsContainer.innerHTML = '<span style="color:#10b981; font-size:0.85rem;">✅ No PII detected</span>';
-            } else {
+            if (data.matches && data.matches.length === 0) {
+                tagsContainer.innerHTML = '<span style="color:#10b981; font-weight:600;">✅ No PII detected</span>';
+            } else if (data.matches) {
                 data.matches.forEach(m => {
                     const span = document.createElement('span');
                     span.className = 'tag';
-                    span.textContent = `${m.category_name}: ${m.entity_type} [${m.confidence * 100}%]`;
+                    if (data.blocked) span.style.borderColor = 'rgba(239,68,68,0.5)';
+                    span.textContent = `${m.category_name}: ${m.text}`;
                     tagsContainer.appendChild(span);
                 });
             }
 
-            fetchStats();
-            fetchReceipts();
+            fetchUserQueries();
+            fetchUserStats();
         }
 
-        async function fetchStats() {
+        async function runLandingInspection() {
+            const prompt = document.getElementById('landingPromptInput').value;
+            if (!prompt) return;
+            const selectEl = document.getElementById('landingActionMode');
+            const selectedMode = selectEl ? selectEl.value : 'ANONYMIZE';
+
+            // Sync global server action mode first
+            await updateGlobalActionMode(selectedMode);
+
+            const res = await fetch('/api/test-inspect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: prompt, mode: selectedMode })
+            });
+
+            const data = await res.json();
+            const outputEl = document.getElementById('landingOutput');
+
+            if (data.blocked) {
+                outputEl.style.color = '#fca5a5';
+                outputEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                outputEl.textContent = `🚫 REQUEST BLOCKED BY POLICY:\n${data.error || 'Compliance policy violation: Prompt contained sensitive PII.'}`;
+            } else {
+                outputEl.style.color = selectedMode === 'LOG_ONLY' ? '#fde047' : '#a7f3d0';
+                outputEl.style.borderColor = 'var(--bg-card-border)';
+                outputEl.textContent = data.anonymized_prompt;
+            }
+
+            const tagsContainer = document.getElementById('landingMatches');
+            tagsContainer.innerHTML = '';
+            if (data.matches && data.matches.length === 0) {
+                tagsContainer.innerHTML = '<span style="color:#10b981; font-weight:600; font-size:0.85rem;">✅ No PII detected</span>';
+            } else if (data.matches) {
+                data.matches.forEach(m => {
+                    const span = document.createElement('span');
+                    span.className = 'tag';
+                    if (data.blocked) span.style.borderColor = 'rgba(239,68,68,0.5)';
+                    span.textContent = `${m.category_name}: ${m.text}`;
+                    tagsContainer.appendChild(span);
+                });
+            }
+        }
+
+        async function updateGlobalActionMode(mode) {
             try {
-                const res = await fetch('/api/stats');
+                const res = await fetch('/api/config/action-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: mode })
+                });
                 const data = await res.json();
-                document.getElementById('stat-requests').textContent = data.total_requests;
-                document.getElementById('stat-pii').textContent = data.total_pii_detected;
+                console.log('Updated PII Action Mode to:', data.pii_action_mode);
+                const s1 = document.getElementById('actionModeSelect');
+                const s2 = document.getElementById('landingActionMode');
+                if (s1) s1.value = data.pii_action_mode;
+                if (s2) s2.value = data.pii_action_mode;
+            } catch (e) {
+                console.error('Failed to update action mode:', e);
+            }
+        }
+
+        async function syncActiveActionMode() {
+            try {
+                const res = await fetch('/api/config/action-mode');
+                const data = await res.json();
+                const s1 = document.getElementById('actionModeSelect');
+                const s2 = document.getElementById('landingActionMode');
+                if (s1 && data.pii_action_mode) s1.value = data.pii_action_mode;
+                if (s2 && data.pii_action_mode) s2.value = data.pii_action_mode;
             } catch (e) {}
         }
 
-        async function fetchReceipts() {
+        window.addEventListener('load', () => {
+            syncActiveActionMode();
+        });
+
+        async function fetchUserStats() {
             try {
-                const res = await fetch('/api/audit-receipts');
-                const receipts = await res.json();
-                const tbody = document.getElementById('auditTableBody');
-                if (receipts.length === 0) return;
+                const res = await fetch(`/api/stats?user_uuid=${currentUserUuid}`);
+                const data = await res.json();
+                document.getElementById('stat-requests').textContent = data.total_requests || 0;
+                document.getElementById('stat-pii').textContent = data.total_pii_detected || 0;
+            } catch (e) {}
+        }
+
+        let queryCache = {};
+
+        async function fetchUserQueries() {
+            try {
+                const res = await fetch(`/api/users/${currentUserUuid}/queries`);
+                const queries = await res.json();
+                const tbody = document.getElementById('queryTableBody');
+                if (!queries || queries.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No proxy queries recorded yet for ${currentUserUuid}</td></tr>`;
+                    return;
+                }
 
                 tbody.innerHTML = '';
-                receipts.forEach(r => {
+                queries.forEach(q => {
+                    queryCache[q.request_id] = q;
                     const tr = document.createElement('tr');
+                    tr.style.cursor = 'pointer';
+                    tr.title = 'Click to inspect full prompt and details';
+                    tr.onclick = () => showQueryDetails(q.request_id);
+                    tr.onmouseenter = () => tr.style.background = 'rgba(0, 242, 254, 0.08)';
+                    tr.onmouseleave = () => tr.style.background = 'transparent';
+
                     tr.innerHTML = `
-                        <td><strong>${r.receipt_id}</strong></td>
-                        <td>${r.user_id}</td>
-                        <td><span style="color:#38bdf8;">${r.action_mode}</span></td>
-                        <td><strong>${r.pii_count}</strong></td>
-                        <td>${r.categories_found.join(', ') || 'None'}</td>
-                        <td class="hash-code">${r.current_hash.substring(0, 16)}...</td>
+                        <td><strong style="color:var(--accent-blue);">${q.request_id}</strong></td>
+                        <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${q.original_prompt || 'N/A'}</td>
+                        <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#a7f3d0;">${q.anonymized_prompt || 'N/A'}</td>
+                        <td><strong>${q.pii_count}</strong></td>
+                        <td>${(q.categories_found || []).map(c => `<span class="tag">${c}</span>`).join('') || 'None'}</td>
+                        <td>${q.latency_ms} ms</td>
+                        <td style="color:var(--text-muted); font-size:0.75rem;">${(q.current_hash || '').substring(0, 14)}...</td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (e) {}
         }
 
-        // Initial fetch on load + automatic 2-second live polling
-        fetchStats();
-        fetchReceipts();
-        setInterval(fetchStats, 2000);
-        setInterval(fetchReceipts, 2000);
+        function showQueryDetails(requestId) {
+            const q = queryCache[requestId];
+            if (!q) return;
+
+            document.getElementById('detail-request-id').textContent = `Request: ${q.request_id}`;
+            document.getElementById('detail-meta').textContent = `Endpoint: ${q.endpoint || '/v1/chat/completions'} • Created: ${q.created_at ? new Date(q.created_at).toLocaleString() : 'Just Now'}`;
+            document.getElementById('detail-pii-count').textContent = q.pii_count || 0;
+            document.getElementById('detail-latency').textContent = `${q.latency_ms || 0} ms`;
+            document.getElementById('detail-action-mode').textContent = q.action_mode || 'ANONYMIZE';
+            document.getElementById('detail-model').textContent = q.model || 'nvidia/Qwen3.6-35B';
+
+            document.getElementById('detail-orig-prompt').textContent = q.original_prompt || 'No prompt content recorded';
+            document.getElementById('detail-anon-prompt').textContent = q.anonymized_prompt || 'No anonymized content recorded';
+
+            const itemsContainer = document.getElementById('detail-items-container');
+            itemsContainer.innerHTML = '';
+
+            if (!q.pii_items || q.pii_items.length === 0) {
+                itemsContainer.innerHTML = '<span style="color:#10b981; font-weight:600; font-size:0.85rem;">✅ No PII entities matched in this prompt</span>';
+            } else {
+                q.pii_items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.82rem; font-family:"JetBrains Mono", monospace;';
+                    div.innerHTML = `
+                        <div>
+                            <span class="tag">${item.category_name}</span>
+                            <span style="color:#fca5a5;">"${item.original_text}"</span>
+                        </div>
+                        <div>
+                            <span style="color:#a7f3d0; margin-right:12px;">➔ ${item.placeholder_token || '[MASKED]'}</span>
+                            <span style="color:var(--text-muted); font-size:0.75rem;">Confidence: ${(item.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                    `;
+                    itemsContainer.appendChild(div);
+                });
+            }
+
+            document.getElementById('detail-current-hash').textContent = q.current_hash || 'N/A';
+            document.getElementById('detail-previous-hash').textContent = q.previous_hash || 'GENESIS_BLOCK_0000';
+
+            document.getElementById('query-detail-modal').style.display = 'flex';
+        }
+
+        function closeQueryDetailModal() {
+            document.getElementById('query-detail-modal').style.display = 'none';
+        }
+
+        function copyDetailText(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text);
+            alert('Copied text to clipboard!');
+        }
     </script>
 </body>
 </html>
