@@ -60,16 +60,39 @@ class UserSyncRequest(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"❌ Unhandled exception on {request.url.path}: {exc}")
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)}
+    )
+
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+INDEX_HTML_PATH = os.path.join(TEMPLATES_DIR, "index.html")
+
 @app.get("/", response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Render the dashboard UI with environment settings."""
     clerk_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "")
     clerk_url = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "clerk_publishable_key": clerk_key,
-        "clerk_js_url": clerk_url
-    })
+    try:
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "clerk_publishable_key": clerk_key,
+            "clerk_js_url": clerk_url
+        })
+    except Exception as e:
+        print(f"Template load error: {e}")
+        if os.path.exists(INDEX_HTML_PATH):
+            with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
+                content = f.read()
+            content = content.replace("{{ clerk_publishable_key }}", clerk_key)
+            content = content.replace("{{ clerk_js_url }}", clerk_url)
+            return HTMLResponse(content=content)
+        raise HTTPException(status_code=500, detail=f"Dashboard template error: {e}")
 
 @app.get("/health")
 async def health_check():
