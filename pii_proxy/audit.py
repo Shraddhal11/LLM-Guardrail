@@ -8,7 +8,10 @@ from dataclasses import dataclass, asdict
 
 from pii_proxy.db import SessionLocal, DBQueryLog, DBPIIDetectedItem, DBUser
 
-STORAGE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "audit_store.json")
+if os.getenv("VERCEL"):
+    STORAGE_FILE = "/tmp/audit_store.json"
+else:
+    STORAGE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "audit_store.json")
 
 @dataclass
 class AuditReceipt:

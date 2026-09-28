@@ -22,11 +22,50 @@ if not DB_URL:
     except Exception:
         pass
 
-# Convert postgresql:// to use psycopg2 if needed
+# Normalize connection string
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
-engine = sa.create_engine(DB_URL, pool_size=10, max_overflow=20, pool_pre_ping=True)
+def create_db_engine(url: str):
+    import ssl
+    # 1. Try standard psycopg2 if available and not explicitly using pg8000
+    if not os.getenv("VERCEL") and "postgresql+pg8000://" not in url:
+        try:
+            eng = sa.create_engine(url, pool_size=5, max_overflow=10, pool_pre_ping=True)
+            # Test connection
+            with eng.connect() as conn:
+                conn.execute(sa.text("SELECT 1"))
+            return eng
+        except Exception as e:
+            print(f"Primary psycopg2 DB engine failed: {e}")
+
+    # 2. Try pure-python pg8000 driver (safe for Vercel/Lambda serverless)
+    try:
+        clean_url = url.replace("postgresql://", "postgresql+pg8000://", 1).replace("postgres://", "postgresql+pg8000://", 1)
+        if "?" in clean_url:
+            base_url, query = clean_url.split("?", 1)
+            query_params = [q for q in query.split("&") if not q.startswith("sslmode=")]
+            clean_url = base_url + ("?" + "&".join(query_params) if query_params else "")
+
+        ssl_ctx = ssl.create_default_context()
+        eng = sa.create_engine(
+            clean_url,
+            pool_pre_ping=True,
+            connect_args={"ssl_context": ssl_ctx}
+        )
+        with eng.connect() as conn:
+            conn.execute(sa.text("SELECT 1"))
+        print("Successfully connected to Neon PostgreSQL via pg8000 pure-python driver.")
+        return eng
+    except Exception as e:
+        print(f"pg8000 DB engine failed: {e}")
+
+    # 3. Fallback to SQLite in /tmp for serverless runtime
+    sqlite_path = "/tmp/fallback_pii.db"
+    print(f"Using SQLite fallback at {sqlite_path}")
+    return sa.create_engine(f"sqlite:///{sqlite_path}", connect_args={"check_same_thread": False})
+
+engine = create_db_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
