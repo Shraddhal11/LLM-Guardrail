@@ -478,19 +478,61 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             client = httpx.AsyncClient(timeout=180.0)
             try:
                 async with client.stream("POST", upstream_url, json=req_body, headers=headers) as response:
+                    if response.status_code != 200:
+                        err_body = await response.aread()
+                        try:
+                            err_json = json.loads(err_body.decode('utf-8', errors='ignore'))
+                        except Exception:
+                            err_json = {
+                                "error": {
+                                    "message": f"Upstream LLM server error HTTP {response.status_code}. (Current UPSTREAM_BASE_URL: {config.UPSTREAM_BASE_URL})",
+                                    "type": "upstream_error",
+                                    "code": "upstream_status_error"
+                                }
+                            }
+                        yield f"data: {json.dumps(err_json)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
                     async for chunk in response.aiter_text():
                         if config.DEANONYMIZE_OUTPUT and chunk:
                             chunk = vault.de_anonymize(chunk)
                         yield chunk
+            except Exception as stream_err:
+                err_payload = {
+                    "error": {
+                        "message": f"Upstream connection failed ({config.UPSTREAM_BASE_URL}): {str(stream_err)}",
+                        "type": "upstream_connect_error",
+                        "code": "upstream_unavailable"
+                    }
+                }
+                yield f"data: {json.dumps(err_payload)}\n\n"
+                yield "data: [DONE]\n\n"
             finally:
                 await client.aclose()
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
     else:
         async with httpx.AsyncClient(timeout=120.0) as client:
-            res = await client.post(upstream_url, json=req_body, headers=headers)
+            try:
+                res = await client.post(upstream_url, json=req_body, headers=headers)
+            except Exception as conn_err:
+                return JSONResponse(
+                    status_code=502,
+                    content={
+                        "error": {
+                            "message": f"Cannot connect to upstream LLM node ({config.UPSTREAM_BASE_URL}): {str(conn_err)}",
+                            "type": "upstream_connect_error"
+                        }
+                    }
+                )
+
             if res.status_code != 200:
-                return JSONResponse(status_code=res.status_code, content=res.json())
+                try:
+                    res_json = res.json()
+                except Exception:
+                    res_json = {"error": {"message": f"Upstream returned HTTP {res.status_code}", "type": "upstream_error"}}
+                return JSONResponse(status_code=res.status_code, content=res_json)
 
             res_data = res.json()
             if config.DEANONYMIZE_OUTPUT and "choices" in res_data:
