@@ -480,17 +480,30 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 async with client.stream("POST", upstream_url, json=req_body, headers=headers) as response:
                     if response.status_code != 200:
                         err_body = await response.aread()
+                        err_msg = f"HTTP {response.status_code}"
                         try:
                             err_json = json.loads(err_body.decode('utf-8', errors='ignore'))
+                            if "error" in err_json and isinstance(err_json["error"], dict):
+                                err_msg = err_json["error"].get("message", err_msg)
+                            elif "message" in err_json:
+                                err_msg = err_json["message"]
                         except Exception:
-                            err_json = {
-                                "error": {
-                                    "message": f"Upstream LLM server error HTTP {response.status_code}. (Current UPSTREAM_BASE_URL: {config.UPSTREAM_BASE_URL})",
-                                    "type": "upstream_error",
-                                    "code": "upstream_status_error"
+                            pass
+
+                        error_chunk = {
+                            "id": f"chatcmpl-err-{uuid.uuid4().hex[:8]}",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": req_body.get("model", config.DEFAULT_MODEL_ID),
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": f"⚠️ Upstream Provider Error ({response.status_code}): {err_msg}"},
+                                    "finish_reason": "stop"
                                 }
-                            }
-                        yield f"data: {json.dumps(err_json)}\n\n"
+                            ]
+                        }
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
                         yield "data: [DONE]\n\n"
                         return
 
@@ -499,14 +512,20 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                             chunk = vault.de_anonymize(chunk)
                         yield chunk
             except Exception as stream_err:
-                err_payload = {
-                    "error": {
-                        "message": f"Upstream connection failed ({config.UPSTREAM_BASE_URL}): {str(stream_err)}",
-                        "type": "upstream_connect_error",
-                        "code": "upstream_unavailable"
-                    }
+                error_chunk = {
+                    "id": f"chatcmpl-err-{uuid.uuid4().hex[:8]}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": req_body.get("model", config.DEFAULT_MODEL_ID),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": f"⚠️ Upstream Proxy Stream Error: {str(stream_err)}"},
+                            "finish_reason": "stop"
+                        }
+                    ]
                 }
-                yield f"data: {json.dumps(err_payload)}\n\n"
+                yield f"data: {json.dumps(error_chunk)}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
                 await client.aclose()
