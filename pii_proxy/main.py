@@ -416,11 +416,6 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     if "model" not in req_body or not req_body["model"]:
         req_body["model"] = config.DEFAULT_MODEL_ID
 
-    if "api.groq.com" in config.UPSTREAM_BASE_URL:
-        valid_groq_models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it", "qwen-2.5-coder-32b", "deepseek-r1-distill-llama-70b"]
-        if req_body.get("model") not in valid_groq_models:
-            req_body["model"] = "llama-3.1-8b-instant"
-
     is_stream = req_body.get("stream", False)
     headers = {"Content-Type": "application/json"}
     if auth_header:
