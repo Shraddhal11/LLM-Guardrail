@@ -304,6 +304,24 @@ async def list_models(request: Request, user_uuid: Optional[str] = None):
                 "owned_by": "nvidia"
             },
             {
+                "id": "llama-3.3-70b-versatile",
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": "groq"
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": "groq"
+            },
+            {
+                "id": "meta-llama/llama-3.2-1b-instruct:free",
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": "openrouter"
+            },
+            {
                 "id": config.EMBEDDING_MODEL_ID,
                 "object": "model",
                 "created": 1700000000,
