@@ -112,10 +112,10 @@ async def get_audit_receipts(limit: int = 50, user_uuid: Optional[str] = None):
     return audit_logger.get_recent_receipts(limit=limit, user_uuid=user_uuid)
 
 @app.post("/api/users/sync")
-async def sync_user(req: UserSyncRequest):
+async def sync_user(req: UserSyncRequest, request: Request):
     """
     Sync Clerk authenticated user with Neon PostgreSQL database.
-    Generates a unique user_uuid and custom proxy link http://localhost:8000/proxy/{user_uuid}/v1
+    Generates a unique user_uuid and custom proxy link based on host domain.
     """
     db = SessionLocal()
     try:
@@ -136,9 +136,9 @@ async def sync_user(req: UserSyncRequest):
             db.commit()
             db.refresh(user)
 
-        host_port = f"{config.HOST if config.HOST != '0.0.0.0' else 'localhost'}:{config.PORT}"
-        proxy_url = f"http://{host_port}/proxy/{user.user_uuid}/v1"
-        direct_url = f"http://{host_port}/{user.user_uuid}/v1"
+        base_url = str(request.base_url).rstrip("/")
+        proxy_url = f"{base_url}/proxy/{user.user_uuid}/v1"
+        direct_url = f"{base_url}/{user.user_uuid}/v1"
 
         return {
             "id": user.id,

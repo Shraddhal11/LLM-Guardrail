@@ -597,7 +597,7 @@
         <div class="proxy-link-box">
             <div>
                 <div style="font-weight: 700; font-size: 1.05rem; color: #fff;">🔑 Your Personal Proxy Endpoint Link (Paste into Cline Settings)</div>
-                <div class="proxy-url-display" id="userProxyUrl">http://localhost:8000/proxy/usr_cd8bef00/v1</div>
+                <div class="proxy-url-display" id="userProxyUrl">Syncing proxy endpoint...</div>
             </div>
             <button class="btn-primary-cta" style="padding:0.6rem 1.2rem; font-size:0.88rem;" onclick="copyProxyUrl()">📋 Copy Base URL</button>
         </div>
@@ -717,7 +717,11 @@
                             });
                             const userData = await res.json();
                             currentUserUuid = userData.user_uuid;
-                            document.getElementById('userProxyUrl').textContent = userData.proxy_url;
+                            let proxyUrl = userData.proxy_url;
+                            if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                                proxyUrl = `${window.location.origin}/proxy/${userData.user_uuid}/v1`;
+                            }
+                            document.getElementById('userProxyUrl').textContent = proxyUrl;
                             document.getElementById('stat-score').textContent = (userData.trust_score || 100.0).toFixed(1);
                         } catch (err) {
                             console.error('User sync error:', err);
