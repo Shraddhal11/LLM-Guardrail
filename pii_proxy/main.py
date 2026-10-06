@@ -9,13 +9,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import func
 from typing import List, Dict, Any, Optional
 
 from pii_proxy.config import config
 from pii_proxy.pii_detector import PIIDetector
 from pii_proxy.anonymizer import PIIAnonymizer, PIISessionVault
 from pii_proxy.audit import audit_logger
-from pii_proxy.db import init_db, SessionLocal, DBUser, DBQueryLog, DBPIIDetectedItem
+from pii_proxy.auth import get_claims, get_current_user, require_admin, assert_owner_or_admin
+from pii_proxy.context import identity_from_request
+from pii_proxy.db import init_db, SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBCategory
 
 app = FastAPI(title="PII Data Anonymization Governance Proxy Platform", version="2.0.0")
 
@@ -103,34 +107,432 @@ async def health_check():
         "pii_action_mode": config.PII_ACTION_MODE
     }
 
+@app.get("/api/me")
+async def get_me(user: DBUser = Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "user_uuid": user.user_uuid,
+        "role": user.role,
+        "action_mode": user.action_mode,
+    }
+
+def _sessions_summary(db, user_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+    q = (
+        db.query(
+            DBSession.id,
+            DBSession.external_id,
+            DBSession.started_at,
+            DBSession.last_seen_at,
+            DBUser.user_uuid,
+            DBUser.email,
+            func.count(DBEvent.id).label("requests"),
+            func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])).label("violations"),
+        )
+        .join(DBUser, DBUser.id == DBSession.user_id)
+        .outerjoin(DBEvent, DBEvent.session_id == DBSession.id)
+        .group_by(DBSession.id, DBUser.id)
+        .order_by(DBSession.last_seen_at.desc())
+    )
+    if user_uuid:
+        q = q.filter(DBUser.user_uuid == user_uuid)
+    rows = q.all()
+    agent_counts = dict(db.query(DBAgent.session_id, func.count(DBAgent.id)).group_by(DBAgent.session_id).all())
+    return [
+        {
+            "session_id": r.id,
+            "external_id": r.external_id,
+            "user_uuid": r.user_uuid,
+            "user_email": r.email,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
+            "requests": r.requests,
+            "violations": r.violations,
+            "agents": agent_counts.get(r.id, 0),
+        }
+        for r in rows
+    ]
+
+@app.get("/api/users/{user_uuid}/sessions")
+async def user_sessions(user_uuid: str, user: DBUser = Depends(get_current_user)):
+    assert_owner_or_admin(user, user_uuid)
+    db = SessionLocal()
+    try:
+        return _sessions_summary(db, user_uuid)
+    finally:
+        db.close()
+
+@app.get("/api/admin/sessions")
+async def admin_sessions(admin: DBUser = Depends(require_admin)):
+    db = SessionLocal()
+    try:
+        return _sessions_summary(db)
+    finally:
+        db.close()
+
+@app.get("/api/sessions/{session_id}/agents")
+async def session_agents(session_id: str, user: DBUser = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(DBSession, DBUser)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBSession.id == session_id)
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        _, owner = row
+        assert_owner_or_admin(user, owner.user_uuid)
+
+        agents = db.query(DBAgent).filter(DBAgent.session_id == session_id).order_by(DBAgent.created_at).all()
+        names = {a.id: a.agent_name for a in agents}
+        requests = dict(
+            db.query(DBEvent.agent_id, func.count(DBEvent.id))
+            .filter(DBEvent.session_id == session_id)
+            .group_by(DBEvent.agent_id)
+            .all()
+        )
+        violations = dict(
+            db.query(DBEvent.agent_id, func.count(DBEvent.id))
+            .filter(DBEvent.session_id == session_id, DBEvent.decision.in_(["redact", "block"]))
+            .group_by(DBEvent.agent_id)
+            .all()
+        )
+        return [
+            {
+                "agent_name": a.agent_name,
+                "parent_agent_name": names.get(a.parent_agent_id),
+                "initial_score": a.initial_score,
+                "requests": requests.get(a.id, 0),
+                "violations": violations.get(a.id, 0),
+            }
+            for a in agents
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/admin/users")
+async def admin_list_users(admin: DBUser = Depends(require_admin)):
+    """All users with request counts. A violation is an event where PII was redacted or blocked."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(
+                DBUser.id,
+                DBUser.user_uuid,
+                DBUser.email,
+                DBUser.name,
+                DBUser.role,
+                DBUser.created_at,
+                func.count(DBEvent.id).label("requests"),
+                func.coalesce(func.sum(DBEvent.pii_count), 0).label("pii_detected"),
+                func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])).label("violations"),
+                func.max(DBEvent.created_at).label("last_active"),
+            )
+            .outerjoin(DBSession, DBSession.user_id == DBUser.id)
+            .outerjoin(DBEvent, DBEvent.session_id == DBSession.id)
+            .group_by(DBUser.id)
+            .order_by(DBUser.created_at.desc())
+            .all()
+        )
+        top_rows = (
+            db.query(DBSession.user_id, DBCategory.name, func.count(DBPIIFinding.id))
+            .join(DBEvent, DBEvent.session_id == DBSession.id)
+            .join(DBPIIFinding, DBPIIFinding.event_id == DBEvent.id)
+            .join(DBCategory, DBCategory.id == DBPIIFinding.category_id)
+            .group_by(DBSession.user_id, DBCategory.name)
+            .all()
+        )
+        top_by_user: Dict[str, tuple] = {}
+        for user_id, cat_name, n in top_rows:
+            if user_id not in top_by_user or n > top_by_user[user_id][1]:
+                top_by_user[user_id] = (cat_name, n)
+        return [
+            {
+                "user_uuid": r.user_uuid,
+                "email": r.email,
+                "name": r.name,
+                "role": r.role,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "last_active": r.last_active.isoformat() if r.last_active else None,
+                "requests": r.requests,
+                "pii_detected": int(r.pii_detected),
+                "violations": r.violations,
+                "top_category": top_by_user.get(r.id, (None, 0))[0],
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/admin/activity")
+async def admin_activity(limit: int = 50, violations_only: bool = False, admin: DBUser = Depends(require_admin)):
+    """Most recent events across all users, newest first. violations_only keeps redact and block."""
+    db = SessionLocal()
+    try:
+        q = (
+            db.query(DBEvent, DBUser, DBSession.external_id)
+            .join(DBSession, DBSession.id == DBEvent.session_id)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+        )
+        if violations_only:
+            q = q.filter(DBEvent.decision.in_(["redact", "block"]))
+        rows = q.order_by(DBEvent.created_at.desc()).limit(limit).all()
+        event_ids = [e.id for e, _, _ in rows]
+        cats: Dict[str, set] = {}
+        if event_ids:
+            for event_id, cat_name in (
+                db.query(DBPIIFinding.event_id, DBCategory.name)
+                .join(DBCategory, DBCategory.id == DBPIIFinding.category_id)
+                .filter(DBPIIFinding.event_id.in_(event_ids))
+                .all()
+            ):
+                cats.setdefault(event_id, set()).add(cat_name)
+        return [
+            {
+                "event_id": e.id,
+                "session_id": e.session_id,
+                "session_external_id": ext,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "user_email": u.email,
+                "user_uuid": u.user_uuid,
+                "decision": e.decision,
+                "original_text": e.original_text,
+                "prompt_tokens": e.prompt_tokens,
+                "completion_tokens": e.completion_tokens,
+                "action_mode": e.action_mode,
+                "pii_count": e.pii_count,
+                "categories_found": sorted(cats.get(e.id, set())),
+                "anonymized_prompt": e.anonymized_text,
+                "latency_ms": e.latency_ms,
+            }
+            for e, u, ext in rows
+        ]
+    finally:
+        db.close()
+
+class UserActionModeRequest(BaseModel):
+    mode: Optional[str] = None
+
+VALID_MODES = {"ANONYMIZE", "REDACT", "HASH", "BLOCK", "LOG_ONLY"}
+
+@app.put("/api/users/{user_uuid}/action-mode")
+async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user: DBUser = Depends(get_current_user)):
+    """Set how this user's PII is handled. Null goes back to the global default."""
+    assert_owner_or_admin(user, user_uuid)
+    mode = req.mode.upper() if req.mode else None
+    if mode is not None and mode not in VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"mode must be one of {sorted(VALID_MODES)} or null")
+    db = SessionLocal()
+    try:
+        target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if target is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        target.action_mode = mode
+        db.commit()
+        return {"user_uuid": user_uuid, "action_mode": mode or config.PII_ACTION_MODE, "is_default": mode is None}
+    finally:
+        db.close()
+
+def _event_row(e, findings, session_ext, agent_name, owner_uuid):
+    decision = e.decision
+    cats = sorted({cat for _, cat, _ in findings})
+    reason = None
+    if decision == "allow" and not findings:
+        reason = "No PII found, sent as-is."
+    elif decision == "block":
+        reason = f"Blocked: {e.pii_count} PII item(s) found ({', '.join(cats)}). Not sent to the model."
+    elif decision == "redact":
+        reason = f"Redacted {e.pii_count} PII item(s): {', '.join(cats)}."
+    return {
+        "event_id": e.id,
+        "session_id": e.session_id,
+        "session_external_id": session_ext,
+        "user_uuid": owner_uuid,
+        "agent_name": agent_name,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+        "model": e.model,
+        "action_mode": e.action_mode,
+        "decision": decision,
+        "reason": reason,
+        "pii_count": e.pii_count,
+        "categories_found": cats,
+        "latency_ms": e.latency_ms,
+        "prompt_tokens": e.prompt_tokens,
+        "completion_tokens": e.completion_tokens,
+        "tokens_estimated": e.tokens_estimated,
+        "original_text": e.original_text,
+        "anonymized_text": e.anonymized_text,
+        "findings": [
+            {"entity_type": f.entity_type, "category": cat, "placeholder": f.placeholder, "confidence": f.confidence}
+            for f, cat, _ in findings
+        ],
+    }
+
+def _findings_for(db, event_ids):
+    out = {}
+    if not event_ids:
+        return out
+    for f, cat in (
+        db.query(DBPIIFinding, DBCategory)
+        .join(DBCategory, DBCategory.id == DBPIIFinding.category_id)
+        .filter(DBPIIFinding.event_id.in_(event_ids))
+        .all()
+    ):
+        out.setdefault(f.event_id, []).append((f, cat.name, cat.id))
+    return out
+
+@app.get("/api/events/{event_id}")
+async def get_event(event_id: str, user: DBUser = Depends(get_current_user)):
+    """One request: before and after text, the decision and its reason, and tokens."""
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(DBEvent, DBSession, DBUser, DBAgent)
+            .join(DBSession, DBSession.id == DBEvent.session_id)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .outerjoin(DBAgent, DBAgent.id == DBEvent.agent_id)
+            .filter(DBEvent.id == event_id)
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="event not found")
+        e, session_row, owner, agent = row
+        assert_owner_or_admin(user, owner.user_uuid)
+        findings = _findings_for(db, [e.id]).get(e.id, [])
+        return _event_row(e, findings, session_row.external_id, agent.agent_name if agent else None, owner.user_uuid)
+    finally:
+        db.close()
+
+@app.get("/api/sessions/{session_id}/events")
+async def session_events(session_id: str, user: DBUser = Depends(get_current_user)):
+    """All requests in one session, oldest first."""
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(DBSession, DBUser)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBSession.id == session_id)
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        session_row, owner = row
+        assert_owner_or_admin(user, owner.user_uuid)
+        events = (
+            db.query(DBEvent, DBAgent)
+            .outerjoin(DBAgent, DBAgent.id == DBEvent.agent_id)
+            .filter(DBEvent.session_id == session_id)
+            .order_by(DBEvent.created_at.asc())
+            .all()
+        )
+        findings = _findings_for(db, [e.id for e, _ in events])
+        return [
+            _event_row(e, findings.get(e.id, []), session_row.external_id, a.agent_name if a else None, owner.user_uuid)
+            for e, a in events
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/users/{user_uuid}/tokens")
+async def user_tokens(user_uuid: str, user: DBUser = Depends(get_current_user)):
+    """Token totals: the latest session, and averages across all sessions."""
+    assert_owner_or_admin(user, user_uuid)
+    db = SessionLocal()
+    try:
+        per_session = (
+            db.query(
+                DBSession.id,
+                DBSession.external_id,
+                DBSession.last_seen_at,
+                func.coalesce(func.sum(DBEvent.prompt_tokens), 0),
+                func.coalesce(func.sum(DBEvent.completion_tokens), 0),
+                func.count(DBEvent.id),
+            )
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .outerjoin(DBEvent, DBEvent.session_id == DBSession.id)
+            .filter(DBUser.user_uuid == user_uuid)
+            .group_by(DBSession.id)
+            .order_by(DBSession.last_seen_at.desc())
+            .all()
+        )
+        sessions = [
+            {
+                "session_id": sid,
+                "external_id": ext,
+                "prompt_tokens": int(p),
+                "completion_tokens": int(c),
+                "total_tokens": int(p) + int(c),
+                "requests": int(n),
+            }
+            for sid, ext, _, p, c, n in per_session
+        ]
+        total_tokens = sum(s["total_tokens"] for s in sessions)
+        total_requests = sum(s["requests"] for s in sessions)
+        n_sessions = len(sessions)
+        return {
+            "latest_session": sessions[0] if sessions else None,
+            "average_tokens_per_session": round(total_tokens / n_sessions, 1) if n_sessions else 0,
+            "average_tokens_per_request": round(total_tokens / total_requests, 1) if total_requests else 0,
+            "total_tokens": total_tokens,
+            "total_requests": total_requests,
+        }
+    finally:
+        db.close()
+
+@app.get("/api/users/{user_uuid}/daily")
+async def user_daily(user_uuid: str, days: int = 14, user: DBUser = Depends(get_current_user)):
+    """Requests and violations per day for one user (owner or admin)."""
+    assert_owner_or_admin(user, user_uuid)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    db = SessionLocal()
+    try:
+        day = func.date(DBEvent.created_at)
+        rows = (
+            db.query(
+                day.label("day"),
+                func.count(DBEvent.id),
+                func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])),
+            )
+            .join(DBSession, DBSession.id == DBEvent.session_id)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBUser.user_uuid == user_uuid, DBEvent.created_at >= since)
+            .group_by(day)
+            .order_by(day)
+            .all()
+        )
+        return [{"day": str(d), "requests": r, "violations": v} for d, r, v in rows]
+    finally:
+        db.close()
+
 @app.get("/api/stats")
-async def get_stats(user_uuid: Optional[str] = None):
+async def get_stats(user_uuid: Optional[str] = None, user: DBUser = Depends(get_current_user)):
+    assert_owner_or_admin(user, user_uuid)
     return audit_logger.get_stats(user_uuid=user_uuid)
 
 @app.get("/api/audit-receipts")
-async def get_audit_receipts(limit: int = 50, user_uuid: Optional[str] = None):
+async def get_audit_receipts(limit: int = 50, user_uuid: Optional[str] = None, user: DBUser = Depends(get_current_user)):
+    assert_owner_or_admin(user, user_uuid)
     return audit_logger.get_recent_receipts(limit=limit, user_uuid=user_uuid)
 
 @app.post("/api/users/sync")
-async def sync_user(req: UserSyncRequest, request: Request):
+async def sync_user(req: UserSyncRequest, request: Request, claims: dict = Depends(get_claims)):
     """
-    Sync Clerk authenticated user with Neon PostgreSQL database.
-    Generates a unique user_uuid and custom proxy link based on host domain.
+    Create or fetch the DB user for the Clerk user in the verified token.
+    The Clerk id comes from the token, not the request body.
     """
     db = SessionLocal()
     try:
-        user = db.query(DBUser).filter(DBUser.clerk_user_id == req.clerk_user_id).first()
+        user = db.query(DBUser).filter(DBUser.clerk_user_id == claims["sub"]).first()
         if not user:
-            # Generate short 8-char random hex user_uuid
             u_uuid = f"usr_{uuid.uuid4().hex[:8]}"
-            api_key = f"key_{uuid.uuid4().hex[:16]}"
             user = DBUser(
-                clerk_user_id=req.clerk_user_id,
-                email=req.email,
+                clerk_user_id=claims["sub"],
+                email=req.email or f"{req.clerk_user_id}@noemail.local",
                 name=req.name,
                 user_uuid=u_uuid,
-                api_key=api_key,
-                trust_score=100.0
             )
             db.add(user)
             db.commit()
@@ -146,8 +548,7 @@ async def sync_user(req: UserSyncRequest, request: Request):
             "email": user.email,
             "name": user.name,
             "user_uuid": user.user_uuid,
-            "api_key": user.api_key,
-            "trust_score": user.trust_score,
+            "role": user.role,
             "proxy_url": proxy_url,
             "direct_url": direct_url
         }
@@ -155,39 +556,61 @@ async def sync_user(req: UserSyncRequest, request: Request):
         db.close()
 
 @app.get("/api/users/{user_uuid}/queries")
-async def get_user_queries(user_uuid: str, limit: int = 50):
+async def get_user_queries(user_uuid: str, limit: int = 50, user: DBUser = Depends(get_current_user)):
     """Get queries and detected PII items from Neon DB for specific user_uuid."""
+    assert_owner_or_admin(user, user_uuid)
     db = SessionLocal()
     try:
-        logs = db.query(DBQueryLog).filter(DBQueryLog.user_uuid == user_uuid).order_by(DBQueryLog.created_at.desc()).limit(limit).all()
+        event_rows = (
+            db.query(DBEvent, DBSession.external_id)
+            .join(DBSession, DBSession.id == DBEvent.session_id)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBUser.user_uuid == user_uuid)
+            .order_by(DBEvent.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        events = [e for e, _ in event_rows]
+        session_names = {e.id: ext for e, ext in event_rows}
+        event_ids = [e.id for e in events]
+        findings_by_event: Dict[str, list] = {}
+        if event_ids:
+            for f, cat in (
+                db.query(DBPIIFinding, DBCategory)
+                .join(DBCategory, DBCategory.id == DBPIIFinding.category_id)
+                .filter(DBPIIFinding.event_id.in_(event_ids))
+                .all()
+            ):
+                findings_by_event.setdefault(f.event_id, []).append((f, cat))
         results = []
-        for log in logs:
-            items = db.query(DBPIIDetectedItem).filter(DBPIIDetectedItem.query_log_id == log.id).all()
-            cats = json.loads(log.categories_found) if log.categories_found else []
+        for event in events:
+            findings = findings_by_event.get(event.id, [])
             results.append({
-                "id": log.id,
-                "request_id": log.request_id,
-                "endpoint": log.endpoint,
-                "model": log.model,
-                "original_prompt": log.original_prompt,
-                "anonymized_prompt": log.anonymized_prompt,
-                "pii_count": log.pii_count,
-                "categories_found": cats,
-                "action_mode": log.action_mode,
-                "latency_ms": log.latency_ms,
-                "created_at": log.created_at.isoformat() if log.created_at else None,
-                "previous_hash": log.previous_hash,
-                "current_hash": log.current_hash,
+                "id": event.id,
+                "session_id": event.session_id,
+                "session_external_id": session_names.get(event.id),
+                "prompt_tokens": event.prompt_tokens,
+                "completion_tokens": event.completion_tokens,
+                "request_id": event.id[:8],
+                "model": event.model,
+                "original_prompt": event.original_text,
+                "anonymized_prompt": event.anonymized_text,
+                "pii_count": event.pii_count,
+                "categories_found": sorted({cat.name for _, cat in findings}),
+                "action_mode": event.action_mode,
+                "decision": event.decision,
+                "latency_ms": event.latency_ms,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
                 "pii_items": [
                     {
-                        "category_id": item.category_id,
-                        "category_name": item.category_name,
-                        "entity_type": item.entity_type,
-                        "original_text": item.original_text,
-                        "placeholder_token": item.placeholder_token,
-                        "confidence": item.confidence
+                        "category_id": cat.id,
+                        "category_name": cat.name,
+                        "entity_type": f.entity_type,
+                        "original_text": None,
+                        "placeholder_token": f.placeholder,
+                        "confidence": f.confidence
                     }
-                    for item in items
+                    for f, cat in findings
                 ]
             })
         return results
@@ -195,8 +618,8 @@ async def get_user_queries(user_uuid: str, limit: int = 50):
         db.close()
 
 @app.post("/api/test-inspect")
-async def test_inspect(req: TestInspectRequest):
-    """Test endpoint for inspecting and anonymizing prompt PII."""
+async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser = Depends(get_current_user)):
+    """Inspect and anonymize a prompt. The event is recorded against the signed-in user."""
     vault = PIISessionVault()
     start_time = time.time()
     mode = req.mode or "ANONYMIZE"
@@ -208,8 +631,9 @@ async def test_inspect(req: TestInspectRequest):
         # Detect matches for logging blocked attempt
         matches = detector.detect(req.prompt)
         audit_logger.log_event(
+            identity=identity_from_request(request, user.user_uuid),
             user_id=req.user_id,
-            user_uuid="default_user",
+            user_uuid=user.user_uuid,
             request_id=f"block_{uuid.uuid4().hex[:8]}",
             action_mode="BLOCK",
             matches=matches,
@@ -243,8 +667,9 @@ async def test_inspect(req: TestInspectRequest):
 
     latency_ms = (time.time() - start_time) * 1000.0
     audit_logger.log_event(
+        identity=identity_from_request(request, user.user_uuid),
         user_id=req.user_id,
-        user_uuid="default_user",
+        user_uuid=user.user_uuid,
         request_id=f"test_{uuid.uuid4().hex[:8]}",
         action_mode=mode,
         matches=matches,
@@ -347,6 +772,47 @@ async def update_action_mode(req: ConfigUpdateModeRequest):
     print(f"⚙️ [CONFIG UPDATE] PII_ACTION_MODE set to: {config.PII_ACTION_MODE}")
     return {"status": "success", "pii_action_mode": config.PII_ACTION_MODE}
 
+def _action_mode_for(request: Request, user_uuid: str) -> str:
+    header = request.headers.get("X-Action-Mode")
+    if header:
+        return header.upper()
+    db = SessionLocal()
+    try:
+        row = db.query(DBUser.action_mode).filter(DBUser.user_uuid == user_uuid).first()
+    finally:
+        db.close()
+    return row[0] if row and row[0] else config.PII_ACTION_MODE
+
+def _tokens_from_sse(raw: str):
+    usage = None
+    parts = []
+    for line in raw.splitlines():
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            obj = json.loads(payload)
+        except Exception:
+            continue
+        if obj.get("usage"):
+            usage = obj["usage"]
+        for choice in obj.get("choices", []):
+            text = (choice.get("delta") or {}).get("content")
+            if isinstance(text, str):
+                parts.append(text)
+    return usage, "".join(parts)
+
+def _record_usage(event_id: Optional[str], messages, usage: Optional[dict], completion_text: str) -> None:
+    if not event_id:
+        return
+    if usage and usage.get("prompt_tokens") is not None:
+        audit_logger.set_usage(event_id, usage.get("prompt_tokens"), usage.get("completion_tokens"), False)
+        return
+    prompt_chars = sum(len(str(m.get("content", ""))) for m in messages or [] if isinstance(m, dict))
+    audit_logger.set_usage(event_id, prompt_chars // 4, len(completion_text) // 4, True)
+
 @app.post("/v1/chat/completions")
 @app.post("/chat/completions")
 @app.post("/api/v1/chat/completions")
@@ -363,7 +829,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     start_time = time.time()
     req_body = await request.json()
     auth_header = request.headers.get("Authorization", "")
-    action_mode = request.headers.get("X-Action-Mode") or config.PII_ACTION_MODE
+    action_mode = _action_mode_for(request, user_uuid)
 
     user_id = req_body.get("user") or request.headers.get("X-User-ID") or user_uuid
     request_id = f"req_{uuid.uuid4().hex[:10]}"
@@ -387,6 +853,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 break
         blocked_matches = detector.detect(latest_user_msg) if latest_user_msg else []
         audit_logger.log_event(
+            identity=identity_from_request(request, user_uuid, req_body.get("messages")),
             user_id=user_id,
             user_uuid=user_uuid,
             request_id=f"block_{uuid.uuid4().hex[:10]}",
@@ -450,18 +917,19 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     # If latest user message was found, detect matches specifically for latest message for accurate audit receipt
     if latest_user_msg:
         temp_vault = PIISessionVault()
-        _, latest_matches = anonymizer.process_text(latest_user_msg, temp_vault, mode=config.PII_ACTION_MODE)
+        _, latest_matches = anonymizer.process_text(latest_user_msg, temp_vault, mode=action_mode)
     else:
         latest_user_msg = "No user prompt string"
         latest_anon_msg = "No user prompt string"
         latest_matches = matches
 
     latency_ms = (time.time() - start_time) * 1000.0
-    audit_logger.log_event(
+    event_id = audit_logger.log_event(
+        identity=identity_from_request(request, user_uuid, req_body.get("messages")),
         user_id=user_id,
         user_uuid=user_uuid,
         request_id=request_id,
-        action_mode=config.PII_ACTION_MODE,
+        action_mode=action_mode,
         matches=latest_matches,
         latency_ms=latency_ms,
         endpoint="/v1/chat/completions",
@@ -476,6 +944,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     if is_stream:
         async def stream_generator():
             client = httpx.AsyncClient(timeout=180.0)
+            raw_parts = []
             try:
                 async with client.stream("POST", upstream_url, json=req_body, headers=headers) as response:
                     if response.status_code != 200:
@@ -508,6 +977,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                         return
 
                     async for chunk in response.aiter_text():
+                        raw_parts.append(chunk)
                         if config.DEANONYMIZE_OUTPUT and chunk:
                             chunk = vault.de_anonymize(chunk)
                         yield chunk
@@ -528,6 +998,8 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 yield f"data: {json.dumps(error_chunk)}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
+                usage, completion_text = _tokens_from_sse("".join(raw_parts))
+                _record_usage(event_id, req_body.get("messages"), usage, completion_text)
                 await client.aclose()
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
@@ -554,6 +1026,10 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 return JSONResponse(status_code=res.status_code, content=res_json)
 
             res_data = res.json()
+            completion_text = "".join(
+                (c.get("message") or {}).get("content") or "" for c in res_data.get("choices", []) if isinstance(c.get("message"), dict)
+            )
+            _record_usage(event_id, req_body.get("messages"), res_data.get("usage"), completion_text)
             if config.DEANONYMIZE_OUTPUT and "choices" in res_data:
                 for choice in res_data.get("choices", []):
                     if "message" in choice and "content" in choice["message"]:
@@ -574,6 +1050,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
 async def text_completions(request: Request, user_uuid: Optional[str] = "default_user"):
     """OpenAI-compatible text completions endpoint."""
     start_time = time.time()
+    action_mode = _action_mode_for(request, user_uuid)
     req_body = await request.json()
     auth_header = request.headers.get("Authorization", "")
 
@@ -585,14 +1062,14 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
     all_matches = []
 
     if isinstance(prompt, str) and prompt:
-        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=config.PII_ACTION_MODE)
+        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=action_mode)
         req_body["prompt"] = anon_prompt
         all_matches = matches
     elif isinstance(prompt, list):
         anon_prompts = []
         for p in prompt:
             if isinstance(p, str):
-                ap, m = anonymizer.process_text(p, vault, mode=config.PII_ACTION_MODE)
+                ap, m = anonymizer.process_text(p, vault, mode=action_mode)
                 anon_prompts.append(ap)
                 all_matches.extend(m)
             else:
@@ -609,10 +1086,11 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
 
     latency_ms = (time.time() - start_time) * 1000.0
     audit_logger.log_event(
+        identity=identity_from_request(request, user_uuid, [{"role": "user", "content": req_body.get("prompt")}]),
         user_id=user_id,
         user_uuid=user_uuid,
         request_id=request_id,
-        action_mode=config.PII_ACTION_MODE,
+        action_mode=action_mode,
         matches=all_matches,
         latency_ms=latency_ms,
         endpoint="/v1/completions",

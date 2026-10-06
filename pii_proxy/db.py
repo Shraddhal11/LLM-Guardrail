@@ -1,14 +1,11 @@
 import os
 import uuid
-import time
-import json
-import hashlib
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 
 DB_URL = os.getenv(
     "DATABASE_URL",
@@ -31,7 +28,7 @@ def create_db_engine(url: str):
     # 1. Try standard psycopg2 if available and not explicitly using pg8000
     if not os.getenv("VERCEL") and "postgresql+pg8000://" not in url:
         try:
-            eng = sa.create_engine(url, pool_size=5, max_overflow=10, pool_pre_ping=True)
+            eng = sa.create_engine(url, pool_size=5, max_overflow=10, pool_recycle=240)
             # Test connection
             with eng.connect() as conn:
                 conn.execute(sa.text("SELECT 1"))
@@ -69,66 +66,107 @@ engine = create_db_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+class DBCategory(Base):
+    __tablename__ = "categories"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    name = sa.Column(sa.Text, nullable=False)
+
+
 class DBUser(Base):
     __tablename__ = "users"
 
-    id = sa.Column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    clerk_user_id = sa.Column(sa.String(255), unique=True, index=True, nullable=False)
-    email = sa.Column(sa.String(255), nullable=True)
-    name = sa.Column(sa.String(255), nullable=True)
-    user_uuid = sa.Column(sa.String(64), unique=True, index=True, nullable=False)
-    api_key = sa.Column(sa.String(255), nullable=False)
-    trust_score = sa.Column(sa.Float, default=100.0)
-    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    clerk_user_id = sa.Column(sa.Text, unique=True, nullable=True)
+    email = sa.Column(sa.Text, unique=True, nullable=False)
+    name = sa.Column(sa.Text, nullable=True)
+    user_uuid = sa.Column(sa.Text, unique=True, nullable=False)
+    role = sa.Column(sa.Text, nullable=False, default="user")
+    action_mode = sa.Column(sa.Text, nullable=True)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
-    queries = relationship("DBQueryLog", back_populates="user", cascade="all, delete-orphan")
-
-
-class DBQueryLog(Base):
-    __tablename__ = "query_logs"
-
-    id = sa.Column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = sa.Column(sa.String(36), sa.ForeignKey("users.id"), nullable=True)
-    user_uuid = sa.Column(sa.String(64), index=True, nullable=False)
-    request_id = sa.Column(sa.String(64), index=True, nullable=False)
-    endpoint = sa.Column(sa.String(255), nullable=False)
-    model = sa.Column(sa.String(255), nullable=False)
-    original_prompt = sa.Column(sa.Text, nullable=True)
-    anonymized_prompt = sa.Column(sa.Text, nullable=True)
-    llm_response = sa.Column(sa.Text, nullable=True)
-    pii_count = sa.Column(sa.Integer, default=0)
-    categories_found = sa.Column(sa.Text, nullable=True)  # JSON string array
-    action_mode = sa.Column(sa.String(32), default="ANONYMIZE")
-    latency_ms = sa.Column(sa.Float, default=0.0)
-    previous_hash = sa.Column(sa.String(64), nullable=False)
-    current_hash = sa.Column(sa.String(64), nullable=False)
-    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
-
-    user = relationship("DBUser", back_populates="queries")
-    pii_items = relationship("DBPIIDetectedItem", back_populates="query_log", cascade="all, delete-orphan")
+    sessions = relationship("DBSession", back_populates="user", cascade="all, delete-orphan")
 
 
-class DBPIIDetectedItem(Base):
-    __tablename__ = "pii_detected_items"
+class DBSession(Base):
+    __tablename__ = "sessions"
 
-    id = sa.Column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    query_log_id = sa.Column(sa.String(36), sa.ForeignKey("query_logs.id"), nullable=False)
-    user_uuid = sa.Column(sa.String(64), index=True, nullable=False)
-    category_id = sa.Column(sa.Integer, nullable=False)
-    category_name = sa.Column(sa.String(128), nullable=False)
-    entity_type = sa.Column(sa.String(128), nullable=False)
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    external_id = sa.Column(sa.Text, nullable=True)
+    started_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+    last_seen_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+
+    user = relationship("DBUser", back_populates="sessions")
+    events = relationship("DBEvent", back_populates="session", cascade="all, delete-orphan")
+
+
+class DBAgent(Base):
+    __tablename__ = "agents"
+    __table_args__ = (sa.UniqueConstraint("session_id", "agent_name"),)
+
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    agent_name = sa.Column(sa.Text, nullable=False)
+    parent_agent_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    initial_score = sa.Column(sa.Integer, nullable=False, default=100)
+    ceiling = sa.Column(sa.Integer, nullable=False, default=100)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+
+
+class DBEvent(Base):
+    __tablename__ = "events"
+
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    agent_id = sa.Column(UUID(as_uuid=False), nullable=True)
+    kind = sa.Column(sa.Text, nullable=False, default="prompt")
+    model = sa.Column(sa.Text, nullable=True)
+    action_mode = sa.Column(sa.Text, nullable=True)
+    decision = sa.Column(sa.Text, nullable=False)
+    pii_count = sa.Column(sa.Integer, nullable=False, default=0)
+    prompt_tokens = sa.Column(sa.Integer, nullable=True)
+    completion_tokens = sa.Column(sa.Integer, nullable=True)
+    tokens_estimated = sa.Column(sa.Boolean, nullable=False, default=False)
+    latency_ms = sa.Column(sa.Float, nullable=True)
+    tool_name = sa.Column(sa.Text, nullable=True)
+    anonymized_text = sa.Column(sa.Text, nullable=True)
     original_text = sa.Column(sa.Text, nullable=True)
-    placeholder_token = sa.Column(sa.String(128), nullable=False)
-    confidence = sa.Column(sa.Float, default=0.95)
-    start_char = sa.Column(sa.Integer, nullable=True)
-    end_char = sa.Column(sa.Integer, nullable=True)
-    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
-    query_log = relationship("DBQueryLog", back_populates="pii_items")
+    session = relationship("DBSession", back_populates="events")
+    findings = relationship("DBPIIFinding", back_populates="event", cascade="all, delete-orphan")
+
+
+class DBPIIFinding(Base):
+    __tablename__ = "pii_findings"
+
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    category_id = sa.Column(sa.Integer, sa.ForeignKey("categories.id"), nullable=False)
+    entity_type = sa.Column(sa.Text, nullable=False)
+    placeholder = sa.Column(sa.Text, nullable=True)
+    confidence = sa.Column(sa.Float, nullable=True)
+    text_sha256 = sa.Column(sa.CHAR(64), nullable=False)
+
+    event = relationship("DBEvent", back_populates="findings")
+
+
+class DBReceipt(Base):
+    __tablename__ = "receipts"
+
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    seq = sa.Column(sa.Integer, nullable=False)
+    event_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
+    prev_hash = sa.Column(sa.CHAR(64), nullable=False)
+    hash = sa.Column(sa.CHAR(64), nullable=False)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
 
 def init_db():
-    """Create all tables in Neon PostgreSQL database."""
+    """Create any missing tables. Existing v1 tables are left as they are."""
     Base.metadata.create_all(bind=engine)
 
 

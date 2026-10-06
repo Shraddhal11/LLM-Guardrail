@@ -11,6 +11,7 @@ __pycache__/
 
 # Data & Audit Stores
 data/*.json
+data/backups/
 !data/.gitkeep
 
 # Environment variables & secrets
@@ -30,3 +31,5 @@ Thumbs.db
 
 # Logs
 *.log
+
+frontend/node_modules 

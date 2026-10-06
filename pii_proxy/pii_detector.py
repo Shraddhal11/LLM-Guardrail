@@ -118,6 +118,11 @@ class PIIDetector:
             re.IGNORECASE
         )
 
+        # 8. Patient IDs written as "id 512592" / "Patient ID: 512592"
+        self.regex_patient_id = re.compile(
+            r'\b(?i:patient\s+id|id)[:#\s]+\d{5,12}\b'
+        )
+
         # 9. Health plan beneficiary numbers
         self.regex_health_plan = re.compile(
             r'(?:Health Plan|Beneficiary ID|Policy #|Member ID|Insurance ID|HICN|Medicare ID)[:#\s]+[A-Za-z0-9-]{7,15}\b',
@@ -190,7 +195,7 @@ class PIIDetector:
 
         # 1. Names (Titles, Prefixes, Patient/Employee Context) - Strictly Case Sensitive
         self.regex_name_context = re.compile(
-            r'(?:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor)[:#\s]+'
+            r'(?i:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor)[:#\s]+'
             r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'
         )
 
@@ -220,6 +225,7 @@ class PIIDetector:
         _add_matches(self.regex_fax, "FAX", 5, 0.95)
         _add_matches(self.regex_phone, "PHONE", 4, 0.90)
         _add_matches(self.regex_mrn, "MRN", 8, 0.96)
+        _add_matches(self.regex_patient_id, "PATIENT_ID", 8, 0.9)
         _add_matches(self.regex_health_plan, "HEALTH_BENEFICIARY_ID", 9, 0.95)
         _add_matches(self.regex_credit_card, "ACCOUNT_NUMBER", 10, 0.98)
         _add_matches(self.regex_bank_account, "ACCOUNT_NUMBER", 10, 0.95)

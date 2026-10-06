@@ -1,97 +1,40 @@
-import os
-import time
-import json
 import hashlib
-import uuid
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, asdict
+import json
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from pii_proxy.db import SessionLocal, DBQueryLog, DBPIIDetectedItem, DBUser
+from sqlalchemy import func
 
-if os.getenv("VERCEL"):
-    STORAGE_FILE = "/tmp/audit_store.json"
-else:
-    STORAGE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "audit_store.json")
+from pii_proxy.context import Identity
+from pii_proxy.db import SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBReceipt, DBCategory
 
-@dataclass
-class AuditReceipt:
-    receipt_id: str
-    timestamp: float
-    user_id: str
-    user_uuid: str
-    request_id: str
-    action_mode: str
-    pii_count: int
-    categories_found: List[str]
-    pii_details: List[Dict[str, Any]]
-    previous_hash: str
-    current_hash: str
-    latency_ms: float
+GENESIS_HASH = "0" * 64
+DEFAULT_SESSION = "default"
+
+
+def _decision_for(action_mode: str, pii_count: int) -> str:
+    if pii_count == 0 or action_mode == "LOG_ONLY":
+        return "allow"
+    if action_mode == "BLOCK":
+        return "block"
+    return "redact"
+
+
+def _get_or_create_agent(db, session: DBSession, name: str, parent_name: Optional[str]) -> DBAgent:
+    agent = db.query(DBAgent).filter(DBAgent.session_id == session.id, DBAgent.agent_name == name).first()
+    if agent is not None:
+        return agent
+    parent_id = None
+    if parent_name and parent_name != name:
+        parent_id = _get_or_create_agent(db, session, parent_name, None).id
+    agent = DBAgent(session_id=session.id, agent_name=name, parent_agent_id=parent_id)
+    db.add(agent)
+    db.flush()
+    return agent
+
 
 class AuditLogger:
-    """
-    Tamper-evident, hash-chained audit logger with Neon PostgreSQL + persistent disk storage.
-    """
-    def __init__(self):
-        self.receipts: List[AuditReceipt] = []
-        self.last_hash: str = "GENESIS_HASH_00000000000000000000000000000000"
-        self.stats = {
-            "total_requests": 0,
-            "total_pii_detected": 0,
-            "category_counts": {},
-            "action_counts": {}
-        }
-        self._load_from_db_and_disk()
-
-    def _load_from_db_and_disk(self):
-        """Load past records from Neon DB or disk."""
-        db = None
-        try:
-            db = SessionLocal()
-            logs = db.query(DBQueryLog).order_by(DBQueryLog.created_at.asc()).all()
-            if logs:
-                for log in logs:
-                    cats = json.loads(log.categories_found) if log.categories_found else []
-                    receipt = AuditReceipt(
-                        receipt_id=f"rcpt_{len(self.receipts) + 1:06d}",
-                        timestamp=log.created_at.timestamp() if log.created_at else time.time(),
-                        user_id=log.user_id or "cline_user",
-                        user_uuid=log.user_uuid or "default_user",
-                        request_id=log.request_id,
-                        action_mode=log.action_mode,
-                        pii_count=log.pii_count,
-                        categories_found=cats,
-                        pii_details=[],
-                        previous_hash=log.previous_hash,
-                        current_hash=log.current_hash,
-                        latency_ms=log.latency_ms
-                    )
-                    self.receipts.append(receipt)
-                    self.last_hash = log.current_hash
-                    self.stats["total_requests"] += 1
-                    self.stats["total_pii_detected"] += log.pii_count
-                    self.stats["action_counts"][log.action_mode] = self.stats["action_counts"].get(log.action_mode, 0) + 1
-                    for c in cats:
-                        self.stats["category_counts"][c] = self.stats["category_counts"].get(c, 0) + 1
-                return
-        except Exception as e:
-            pass
-        finally:
-            if db:
-                db.close()
-
-        # Fallback to local json file
-        if os.path.exists(STORAGE_FILE):
-            try:
-                with open(STORAGE_FILE, "r") as f:
-                    data = json.load(f)
-                    receipt_dicts = data.get("receipts", [])
-                    self.receipts = [AuditReceipt(**r) for r in receipt_dicts]
-                    if self.receipts:
-                        self.last_hash = self.receipts[-1].current_hash
-                    self.stats = data.get("stats", self.stats)
-            except Exception:
-                pass
+    """Writes one event per request, its PII findings (hashes only, never raw text), and a per-session receipt."""
 
     def log_event(
         self,
@@ -102,146 +45,209 @@ class AuditLogger:
         matches: List[Any],
         latency_ms: float,
         endpoint: str = "/v1/chat/completions",
-        model: str = "nvidia/Qwen3.6-35B-A3B-NVFP4",
+        model: str = "",
         original_prompt: str = "",
         anonymized_prompt: str = "",
-        vault: Any = None
-    ) -> AuditReceipt:
-        now = time.time()
-        pii_count = len(matches)
-        
-        categories = list(set([m.category_name for m in matches]))
-        pii_details = []
-
-        for m in matches:
-            placeholder = vault.get_or_create_placeholder(m.text, m.entity_type) if vault else f"[{m.entity_type}]"
-            pii_details.append({
-                "category_id": m.category_id,
-                "category_name": m.category_name,
-                "entity_type": m.entity_type,
-                "confidence": round(m.confidence, 3),
-                "original_text": m.text,
-                "placeholder_token": placeholder,
-                "redacted_sample": f"[{m.entity_type}]"
-            })
-
-        # Calculate tamper-evident SHA-256 hash chain
-        payload = {
-            "user_id": user_id,
-            "user_uuid": user_uuid,
-            "request_id": request_id,
-            "action_mode": action_mode,
-            "pii_count": pii_count,
-            "categories": sorted(categories),
-            "timestamp": now,
-            "previous_hash": self.last_hash
-        }
-        payload_bytes = json.dumps(payload, sort_keys=True).encode()
-        current_hash = hashlib.sha256(payload_bytes).hexdigest()
-
-        receipt = AuditReceipt(
-            receipt_id=f"rcpt_{len(self.receipts) + 1:06d}",
-            timestamp=now,
-            user_id=user_id,
-            user_uuid=user_uuid,
-            request_id=request_id,
-            action_mode=action_mode,
-            pii_count=pii_count,
-            categories_found=categories,
-            pii_details=pii_details,
-            previous_hash=self.last_hash,
-            current_hash=current_hash,
-            latency_ms=round(latency_ms, 2)
-        )
-
-        self.receipts.append(receipt)
-        self.last_hash = current_hash
-
-        # Update stats
-        self.stats["total_requests"] += 1
-        self.stats["total_pii_detected"] += pii_count
-        self.stats["action_counts"][action_mode] = self.stats["action_counts"].get(action_mode, 0) + 1
-        for cat in categories:
-            self.stats["category_counts"][cat] = self.stats["category_counts"].get(cat, 0) + 1
-
-        # Write asynchronously to Neon PostgreSQL
-        db = None
+        vault: Any = None,
+        identity: Optional[Identity] = None,
+    ) -> Optional[str]:
+        event_id = None
+        session_ext = identity.session_external_id if identity else DEFAULT_SESSION
+        agent_name = identity.agent_name if identity else "default"
+        parent_name = identity.parent_agent_name if identity else None
+        db = SessionLocal()
         try:
-            db = SessionLocal()
-            # Lookup internal user DB id if available
-            db_user = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
-            internal_user_id = db_user.id if db_user else None
+            user = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+            if user is None:
+                user = DBUser(email=f"{user_uuid}@anonymous.local", name=user_id, user_uuid=user_uuid)
+                db.add(user)
+                db.flush()
 
-            log_entry = DBQueryLog(
-                user_id=internal_user_id,
-                user_uuid=user_uuid,
-                request_id=request_id,
-                endpoint=endpoint,
-                model=model,
-                original_prompt=original_prompt,
-                anonymized_prompt=anonymized_prompt,
-                pii_count=pii_count,
-                categories_found=json.dumps(categories),
-                action_mode=action_mode,
-                latency_ms=round(latency_ms, 2),
-                previous_hash=payload["previous_hash"],
-                current_hash=current_hash
+            session = (
+                db.query(DBSession)
+                .filter(DBSession.user_id == user.id, DBSession.external_id == session_ext)
+                .first()
             )
-            db.add(log_entry)
-            db.flush()  # gets log_entry.id
+            if session is None:
+                session = DBSession(user_id=user.id, external_id=session_ext)
+                db.add(session)
+                db.flush()
+            session.last_seen_at = datetime.utcnow()
 
-            for detail in pii_details:
-                pii_item = DBPIIDetectedItem(
-                    query_log_id=log_entry.id,
-                    user_uuid=user_uuid,
-                    category_id=detail["category_id"],
-                    category_name=detail["category_name"],
-                    entity_type=detail["entity_type"],
-                    original_text=detail["original_text"],
-                    placeholder_token=detail["placeholder_token"],
-                    confidence=detail["confidence"]
-                )
-                db.add(pii_item)
+            agent = _get_or_create_agent(db, session, agent_name, parent_name)
 
+            pii_count = len(matches)
+            decision = _decision_for(action_mode, pii_count)
+            event = DBEvent(
+                session_id=session.id,
+                agent_id=agent.id,
+                kind="prompt",
+                model=model,
+                action_mode=action_mode,
+                decision=decision,
+                pii_count=pii_count,
+                latency_ms=round(latency_ms, 2),
+                anonymized_text=anonymized_prompt if decision == "redact" else None,
+                original_text=original_prompt or None,
+            )
+            db.add(event)
+            db.flush()
+
+            for m in matches:
+                placeholder = vault.get_or_create_placeholder(m.text, m.entity_type) if vault else f"[{m.entity_type}]"
+                db.add(DBPIIFinding(
+                    event_id=event.id,
+                    category_id=m.category_id,
+                    entity_type=m.entity_type,
+                    placeholder=placeholder,
+                    confidence=round(m.confidence, 3),
+                    text_sha256=hashlib.sha256(m.text.encode()).hexdigest(),
+                ))
+
+            last = (
+                db.query(DBReceipt)
+                .filter(DBReceipt.session_id == session.id)
+                .order_by(DBReceipt.seq.desc())
+                .first()
+            )
+            prev_hash = last.hash if last else GENESIS_HASH
+            seq = last.seq + 1 if last else 1
+            payload = json.dumps(
+                {
+                    "event_id": event.id,
+                    "session_id": session.id,
+                    "seq": seq,
+                    "kind": event.kind,
+                    "decision": decision,
+                    "action_mode": action_mode,
+                    "pii_count": pii_count,
+                    "prev_hash": prev_hash,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            db.add(DBReceipt(
+                session_id=session.id,
+                seq=seq,
+                event_id=event.id,
+                prev_hash=prev_hash,
+                hash=hashlib.sha256((prev_hash + payload).encode()).hexdigest(),
+            ))
+            db.commit()
+            event_id = event.id
+        except Exception as e:
+            db.rollback()
+            print(f"Audit write failed: {e}")
+        finally:
+            db.close()
+        return event_id
+
+    def set_usage(self, event_id: str, prompt_tokens: Optional[int], completion_tokens: Optional[int], estimated: bool) -> None:
+        db = SessionLocal()
+        try:
+            db.query(DBEvent).filter(DBEvent.id == event_id).update({
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "tokens_estimated": estimated,
+            })
             db.commit()
         except Exception as e:
-            if db:
-                db.rollback()
+            db.rollback()
+            print(f"Usage write failed: {e}")
         finally:
-            if db:
-                db.close()
-
-        # Save to local JSON backup
-        try:
-            with open(STORAGE_FILE, "w") as f:
-                json.dump({
-                    "receipts": [asdict(r) for r in self.receipts],
-                    "stats": self.stats
-                }, f, indent=2)
-        except Exception:
-            pass
-
-        return receipt
-
-    def get_recent_receipts(self, limit: int = 50, user_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
-        if user_uuid:
-            filtered = [r for r in self.receipts if r.user_uuid == user_uuid]
-            return [asdict(r) for r in reversed(filtered[-limit:])]
-        return [asdict(r) for r in reversed(self.receipts[-limit:])]
+            db.close()
 
     def get_stats(self, user_uuid: Optional[str] = None) -> Dict[str, Any]:
-        if user_uuid:
-            user_receipts = [r for r in self.receipts if r.user_uuid == user_uuid]
-            total_pii = sum(r.pii_count for r in user_receipts)
-            cat_counts = {}
-            for r in user_receipts:
-                for c in r.categories_found:
-                    cat_counts[c] = cat_counts.get(c, 0) + 1
+        db = SessionLocal()
+        try:
+            events = (
+                db.query(DBEvent)
+                .join(DBSession, DBSession.id == DBEvent.session_id)
+                .join(DBUser, DBUser.id == DBSession.user_id)
+            )
+            findings = (
+                db.query(DBCategory.name, func.count(DBPIIFinding.id))
+                .join(DBPIIFinding, DBPIIFinding.category_id == DBCategory.id)
+                .join(DBEvent, DBEvent.id == DBPIIFinding.event_id)
+                .join(DBSession, DBSession.id == DBEvent.session_id)
+                .join(DBUser, DBUser.id == DBSession.user_id)
+            )
+            if user_uuid:
+                events = events.filter(DBUser.user_uuid == user_uuid)
+                findings = findings.filter(DBUser.user_uuid == user_uuid)
+
+            action = func.coalesce(DBEvent.action_mode, "UNKNOWN")
+            rows = (
+                events.with_entities(
+                    DBEvent.decision,
+                    action,
+                    func.count(DBEvent.id),
+                    func.coalesce(func.sum(DBEvent.pii_count), 0),
+                    func.coalesce(func.sum(DBEvent.prompt_tokens), 0),
+                    func.coalesce(func.sum(DBEvent.completion_tokens), 0),
+                    func.coalesce(func.sum(DBEvent.latency_ms), 0),
+                )
+                .group_by(DBEvent.decision, action)
+                .all()
+            )
+            tokens_in = tokens_out = 0
+            latency_sum = 0.0
+            categories = dict(findings.group_by(DBCategory.name).all())
+
+            decision_counts = {"allow": 0, "redact": 0, "block": 0, "deny": 0}
+            action_counts: Dict[str, int] = {}
+            total = 0
+            pii_total = 0
+            for decision, action_name, n, pii, t_in, t_out, lat in rows:
+                latency_sum += float(lat or 0)
+                decision_counts[decision] = decision_counts.get(decision, 0) + n
+                action_counts[action_name] = action_counts.get(action_name, 0) + n
+                total += n
+                pii_total += int(pii)
+                tokens_in += int(t_in)
+                tokens_out += int(t_out)
             return {
-                "total_requests": len(user_receipts),
-                "total_pii_detected": total_pii,
-                "category_counts": cat_counts
+                "total_requests": total,
+                "total_pii_detected": pii_total,
+                "total_tokens": tokens_in + tokens_out,
+                "avg_latency_ms": round(latency_sum / total, 1) if total else 0,
+                "category_counts": categories,
+                "action_counts": action_counts,
+                "decision_counts": decision_counts,
             }
-        return self.stats
+        finally:
+            db.close()
+
+    def get_recent_receipts(self, limit: int = 50, user_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        db = SessionLocal()
+        try:
+            q = (
+                db.query(DBReceipt, DBEvent, DBUser)
+                .join(DBEvent, DBEvent.id == DBReceipt.event_id)
+                .join(DBSession, DBSession.id == DBReceipt.session_id)
+                .join(DBUser, DBUser.id == DBSession.user_id)
+            )
+            if user_uuid:
+                q = q.filter(DBUser.user_uuid == user_uuid)
+            rows = q.order_by(DBReceipt.created_at.desc(), DBReceipt.seq.desc()).limit(limit).all()
+            return [
+                {
+                    "receipt_id": r.id,
+                    "session_id": r.session_id,
+                    "seq": r.seq,
+                    "timestamp": r.created_at.isoformat() if r.created_at else None,
+                    "user_uuid": u.user_uuid,
+                    "event_id": e.id,
+                    "action_mode": e.action_mode,
+                    "decision": e.decision,
+                    "pii_count": e.pii_count,
+                    "previous_hash": r.prev_hash,
+                    "current_hash": r.hash,
+                }
+                for r, e, u in rows
+            ]
+        finally:
+            db.close()
+
 
 audit_logger = AuditLogger()
