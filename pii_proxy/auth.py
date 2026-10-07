@@ -27,7 +27,9 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
 def get_claims(request: Request) -> Dict[str, Any]:
     header = request.headers.get("Authorization", "")
     if not header.startswith("Bearer "):
-        if os.getenv("AUTH_OPTIONAL", "true").lower() == "true":
+        # Opt-in only, for local testing without Clerk. Must never default to on,
+        # since it would let anyone skip login on every owner-or-admin endpoint.
+        if os.getenv("AUTH_OPTIONAL", "false").lower() == "true":
             return {"sub": "user_demo", "role": "user"}
         raise HTTPException(status_code=401, detail="missing bearer token")
     return verify_clerk_token(header[len("Bearer "):].strip())
@@ -39,17 +41,19 @@ def get_current_user(claims: Dict[str, Any] = Depends(get_claims)) -> DBUser:
         user = db.query(DBUser).filter(DBUser.clerk_user_id == claims["sub"]).first()
         if user is None:
             if claims.get("sub") == "user_demo":
-                user = DBUser(
-                    clerk_user_id="user_demo",
-                    email="demo@example.com",
-                    name="Demo User",
-                    user_uuid="default_user",
-                    api_key="key_demo",
-                    trust_score=100.0
-                )
-                db.add(user)
-                db.commit()
-                db.refresh(user)
+                # audit.py creates a user_uuid="default_user" row for anonymous proxy
+                # traffic; reuse it instead of colliding with it on the unique constraint.
+                user = db.query(DBUser).filter(DBUser.user_uuid == "default_user").first()
+                if user is None:
+                    user = DBUser(
+                        clerk_user_id="user_demo",
+                        email="demo@example.com",
+                        name="Demo User",
+                        user_uuid="default_user",
+                    )
+                    db.add(user)
+                    db.commit()
+                    db.refresh(user)
             else:
                 raise HTTPException(status_code=404, detail="user not registered; call /api/users/sync first")
         return user
