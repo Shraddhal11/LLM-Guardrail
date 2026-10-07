@@ -393,7 +393,12 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [violations, setViolations] = useState([]);
-  const proxyUrl = `http://localhost:8000/proxy/${uuid}/v1`;
+  // Vite's dev server (5173) only proxies API calls for browsing the dashboard itself;
+  // the real backend a chat client connects to is always on 8000 in local dev.
+  // Everywhere else (Vercel, or the built dashboard served by the backend directly),
+  // the page's own origin is the backend.
+  const proxyBase = window.location.port === '5173' ? 'http://localhost:8000' : window.location.origin;
+  const proxyUrl = `${proxyBase}/proxy/${uuid}/v1`;
 
   usePoll(async (isCancelled) => {
     const [s, t, q] = await Promise.all([
