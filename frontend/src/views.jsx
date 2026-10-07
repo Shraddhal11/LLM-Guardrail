@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { C, Card, Kpi, DecisionChip, Empty, ScrollBox, LimitSelect, RequestTable, RequestDetail, mono } from './ui.jsx';
+import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, mono } from './ui.jsx';
 
 const inputStyle = { background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '7px 10px', fontSize: '0.88rem' };
 const btn = { background: C.accent, color: '#06241f', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: 600, cursor: 'pointer' };
@@ -71,13 +71,17 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
   const [decision, setDecision] = useState('all');
   const [userFilter, setUserFilter] = useState('');
   const [range, setRange] = useState('all');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => setEventId(initialEvent), [initialEvent]);
 
   usePoll(async (isCancelled) => {
     const url = uuid ? `/api/users/${uuid}/queries?limit=${limit}` : `/api/admin/activity?limit=${limit}`;
     const r = await authedFetch(url);
-    if (r.ok && !isCancelled()) setRows(await r.json());
+    if (r.ok && !isCancelled()) {
+      setRows(await r.json());
+      setLoading(false);
+    }
   }, [uuid, limit, authedFetch]);
 
   usePoll(async (isCancelled) => {
@@ -137,15 +141,21 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
           <option value="7d">Last 7 days</option>
         </select>
       </div>
-      <div style={{ color: C.faint, fontSize: '0.8rem', marginBottom: '10px' }}>Showing {shown.length} of the latest {rows.length} requests</div>
+      <div style={{ color: C.faint, fontSize: '0.8rem', marginBottom: '10px' }}>
+        {loading ? 'Loading requests…' : `Showing ${shown.length} of the latest ${rows.length} requests`}
+      </div>
       <ScrollBox maxHeight={600}>
-        <RequestTable
-          rows={shown}
-          onOpen={setEventId}
-          onOpenSession={onOpenSession}
-          showUser={!uuid}
-          empty="No requests match these filters."
-        />
+        {loading ? (
+          <Loader text="Loading activity logs from database…" />
+        ) : (
+          <RequestTable
+            rows={shown}
+            onOpen={setEventId}
+            onOpenSession={onOpenSession}
+            showUser={!uuid}
+            empty="No requests match these filters."
+          />
+        )}
       </ScrollBox>
     </Card>
   );
@@ -161,12 +171,16 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
   const [eventId, setEventId] = useState(null);
   const [search, setSearch] = useState('');
   const [violationsOnly, setViolationsOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => { setSelected(initialSession); setEventId(null); }, [initialSession]);
 
   usePoll(async (isCancelled) => {
     const r = await authedFetch(uuid ? `/api/users/${uuid}/sessions` : '/api/admin/sessions');
-    if (r.ok && !isCancelled()) setSessions(await r.json());
+    if (r.ok && !isCancelled()) {
+      setSessions(await r.json());
+      setLoading(false);
+    }
   }, [uuid, authedFetch]);
 
   usePoll(async (isCancelled) => {
@@ -217,8 +231,14 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
           <option value="violations">With violations</option>
         </select>
       </div>
-      <div style={{ color: C.faint, fontSize: '0.8rem', marginBottom: '10px' }}>Showing {shown.length} of {filtered.length} sessions</div>
-      {sessions.length === 0 ? <Empty>No sessions yet. Send a request through the proxy.</Empty> : (
+      <div style={{ color: C.faint, fontSize: '0.8rem', marginBottom: '10px' }}>
+        {loading ? 'Loading sessions…' : `Showing ${shown.length} of ${filtered.length} sessions`}
+      </div>
+      {loading ? (
+        <Loader text="Loading sessions from database…" />
+      ) : sessions.length === 0 ? (
+        <Empty>No sessions yet. Send a request through the proxy.</Empty>
+      ) : (
         <ScrollBox maxHeight={600}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>

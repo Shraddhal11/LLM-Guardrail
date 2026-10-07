@@ -53,6 +53,23 @@ export function Empty({ children }) {
   return <div style={{ color: C.faint, padding: '20px', textAlign: 'center', fontSize: '0.9rem' }}>{children}</div>;
 }
 
+export function Loader({ text = 'Loading data…' }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '30px', color: C.muted, fontSize: '0.9rem' }}>
+      <div style={{
+        width: '16px',
+        height: '16px',
+        border: `2px solid ${C.border}`,
+        borderTop: `2px solid ${C.accent}`,
+        borderRadius: '50%',
+        animation: 'ui-spin 0.8s linear infinite'
+      }} />
+      <span>{text}</span>
+      <style>{`@keyframes ui-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export function ScrollBox({ children, maxHeight = 480 }) {
   return <div style={{ maxHeight, overflow: 'auto' }}>{children}</div>;
 }
