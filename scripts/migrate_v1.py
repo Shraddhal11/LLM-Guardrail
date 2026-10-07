@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Back up the current tables to JSON, then apply db/migrations/001_base_schema_v1.sql.
+"""Back up the current tables to JSON, then apply db/migrations/v1_upgrade.sql.
 
 The backup is written first. If it fails, nothing is dropped.
 
@@ -19,7 +19,7 @@ import psycopg2
 import psycopg2.extras
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MIGRATION_FILE = os.path.join(ROOT, "db", "migrations", "001_base_schema_v1.sql")
+MIGRATION_FILE = os.path.join(ROOT, "db", "migrations", "v1_upgrade.sql")
 BACKUP_ROOT = os.path.join(ROOT, "data", "backups")
 TABLES = ["pii_detected_items", "query_logs", "users"]
 
