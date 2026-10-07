@@ -88,9 +88,9 @@ async def render_dashboard(request: Request):
     clerk_pub_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk")
     clerk_js = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
+        request=request,
+        name="index.html",
+        context={
             "clerk_publishable_key": clerk_pub_key,
             "clerk_js_url": clerk_js
         }
