@@ -83,12 +83,21 @@ if os.path.isdir(FRONTEND_ASSETS):
     app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="frontend-assets")
 
 @app.get("/", response_class=HTMLResponse)
-async def render_dashboard():
-    """Serve the built React dashboard."""
+async def render_dashboard(request: Request):
+    """Serve the complete dashboard with 3-method AI benchmark sandbox and initial loader state."""
+    clerk_pub_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk")
+    clerk_js = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
     if os.path.exists(FRONTEND_INDEX):
         with open(FRONTEND_INDEX, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    raise HTTPException(status_code=500, detail="Dashboard build not found. Run `npm run build` in frontend/.")
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "clerk_publishable_key": clerk_pub_key,
+            "clerk_js_url": clerk_js
+        }
+    )
 
 @app.get("/health")
 async def health_check():

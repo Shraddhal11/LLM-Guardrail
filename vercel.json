@@ -5,7 +5,7 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["pii_proxy/**", "frontend/dist/**"]
+        "includeFiles": ["pii_proxy/**"]
       }
     }
   ],
