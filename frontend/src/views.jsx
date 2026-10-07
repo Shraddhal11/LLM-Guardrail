@@ -568,60 +568,176 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
   );
 }
 
-// ---------- Test ----------
+// ---------- Test / Benchmark ----------
 
 export function TestView({ authedFetch }) {
-  const [prompt, setPrompt] = useState('Patient Saurabh Shisode (DOB: 04/12/1985), email saurabh@example.com, phone 555-123-4567, id 512592');
-  const [result, setResult] = useState(null);
+  const [prompt, setPrompt] = useState('My name is John Doe, email john@example.com, phone 555-123-4567, SSN 123-45-6789. Patient Saurabh Shisode (DOB: 04/12/1985).');
+  const [benchmarkResult, setBenchmarkResult] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
-  const run = async () => {
+  const runBenchmark = async () => {
     setBusy(true);
+    setError(null);
     try {
-      const r = await authedFetch('/api/test-inspect', {
+      const r = await authedFetch('/api/benchmark/compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, mode: 'ANONYMIZE' }),
       });
-      setResult(await r.json());
+      if (!r.ok) {
+        const errJson = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(errJson.detail || 'Failed to execute 3-method benchmark');
+      }
+      setBenchmarkResult(await r.json());
+    } catch (e) {
+      setError(e.message);
     } finally {
       setBusy(false);
     }
   };
 
+  const methods = benchmarkResult?.methods || {};
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '18px', alignItems: 'start' }}>
-      <Card title="Prompt">
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} style={{ ...inputStyle, width: '100%', height: '180px', boxSizing: 'border-box', fontFamily: mono, resize: 'vertical' }} />
-        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: C.faint, fontSize: '0.82rem' }}>Checked the same way as a live request. Saved to your activity.</span>
-          <button onClick={run} disabled={busy} style={btn}>{busy ? 'Checking…' : 'Check prompt'}</button>
+    <div style={{ display: 'grid', gap: '20px' }}>
+      <Card title="⚡ 3-Method AI PII Benchmark Sandbox">
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <label style={{ fontSize: '0.85rem', color: C.muted, fontWeight: 500 }}>
+            Test Prompt (Interpreted by Dual-Engine Regex, Microsoft Presidio, and GLiNER Zero-Shot Transformer):
+          </label>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            style={{
+              ...inputStyle,
+              width: '100%',
+              height: '110px',
+              boxSizing: 'border-box',
+              fontFamily: mono,
+              resize: 'vertical',
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: C.faint, fontSize: '0.82rem' }}>
+              Compares accuracy, latency, and entity confidence side-by-side. Benchmark logs are stored in `pii_method_benchmark_logs`.
+            </span>
+            <button onClick={runBenchmark} disabled={busy} style={{ ...btn, background: 'linear-gradient(135deg, #00f2fe, #7f00ff)', color: '#ffffff' }}>
+              {busy ? 'Running All 3 AI Engines…' : '⚡ Run 3-Method Benchmark'}
+            </button>
+          </div>
         </div>
+
+        {error && (
+          <div style={{ marginTop: '14px', background: '#3b1219', color: '#f87171', border: '1px solid #7f1d1d', borderRadius: '6px', padding: '10px 14px', fontSize: '0.88rem' }}>
+            ⚠️ Error: {error}
+          </div>
+        )}
       </Card>
-      <Card title="Result">
-        {!result ? <Empty>Run a check to see what would be found and what the model would receive.</Empty> : (
-          <>
-            <div style={{ fontFamily: mono, color: C.allow, whiteSpace: 'pre-wrap', fontSize: '0.92rem', lineHeight: 1.6, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '14px', minHeight: '90px' }}>
-              {result.anonymized_prompt || result.detail || 'No output'}
+
+      {benchmarkResult && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px', alignItems: 'start' }}>
+          {/* Method 1: Dual-Engine Regex */}
+          <Card
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span>🔍 1. Dual-Engine Regex</span>
+                <span style={{ fontSize: '0.78rem', background: C.border, color: C.accent, padding: '3px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  {methods.regex?.latency_ms ?? 0} ms
+                </span>
+              </div>
+            }
+          >
+            <div style={{ color: C.muted, fontSize: '0.8rem', marginBottom: '8px' }}>
+              Baseline fast exact pattern matcher ({methods.regex?.matches_count ?? 0} matches)
             </div>
-            <div style={{ marginTop: '16px', color: C.muted, fontSize: '0.82rem', marginBottom: '8px' }}>{(result.matches || []).length} item(s) found</div>
-            {(result.matches || []).length > 0 && (
+            <div style={{ fontFamily: mono, color: C.allow, whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.5, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '12px', minHeight: '80px', marginBottom: '12px' }}>
+              {methods.regex?.anonymized_prompt || 'No output'}
+            </div>
+            {(methods.regex?.matches || []).length > 0 ? (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={cellTh}>Type</th><th style={cellTh}>Category</th><th style={cellTh}>Found text</th></tr></thead>
+                <thead><tr><th style={cellTh}>Entity</th><th style={cellTh}>Text</th><th style={cellTh}>Conf</th></tr></thead>
                 <tbody>
-                  {result.matches.map((m, i) => (
+                  {methods.regex.matches.map((m, i) => (
                     <tr key={i}>
-                      <td style={cellTd}>{m.entity_type}</td>
-                      <td style={cellTd}>{m.category_name}</td>
+                      <td style={cellTd}><span style={{ color: C.accent, fontWeight: 600 }}>{m.entity_type}</span></td>
                       <td style={{ ...cellTd, fontFamily: mono }}>{m.text}</td>
+                      <td style={cellTd}>{m.confidence ? `${(m.confidence * 100).toFixed(0)}%` : '100%'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </>
-        )}
-      </Card>
+            ) : <Empty>No entities detected by Regex.</Empty>}
+          </Card>
+
+          {/* Method 2: Microsoft Presidio */}
+          <Card
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span>🛡️ 2. Presidio + SpaCy</span>
+                <span style={{ fontSize: '0.78rem', background: C.border, color: '#38bdf8', padding: '3px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  {methods.presidio?.latency_ms ?? 0} ms
+                </span>
+              </div>
+            }
+          >
+            <div style={{ color: C.muted, fontSize: '0.8rem', marginBottom: '8px' }}>
+              Context-aware Presidio NLP Engine ({methods.presidio?.matches_count ?? 0} matches)
+            </div>
+            <div style={{ fontFamily: mono, color: '#38bdf8', whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.5, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '12px', minHeight: '80px', marginBottom: '12px' }}>
+              {methods.presidio?.anonymized_prompt || 'No output'}
+            </div>
+            {(methods.presidio?.matches || []).length > 0 ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={cellTh}>Entity</th><th style={cellTh}>Text</th><th style={cellTh}>Conf</th></tr></thead>
+                <tbody>
+                  {methods.presidio.matches.map((m, i) => (
+                    <tr key={i}>
+                      <td style={cellTd}><span style={{ color: '#38bdf8', fontWeight: 600 }}>{m.entity_type}</span></td>
+                      <td style={{ ...cellTd, fontFamily: mono }}>{m.text}</td>
+                      <td style={cellTd}>{m.confidence ? `${(m.confidence * 100).toFixed(0)}%` : 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <Empty>No entities detected by Presidio.</Empty>}
+          </Card>
+
+          {/* Method 3: GLiNER Transformer */}
+          <Card
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span>🤖 3. GLiNER Transformer</span>
+                <span style={{ fontSize: '0.78rem', background: C.border, color: '#c084fc', padding: '3px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  {methods.gliner?.latency_ms ?? 0} ms
+                </span>
+              </div>
+            }
+          >
+            <div style={{ color: C.muted, fontSize: '0.8rem', marginBottom: '8px' }}>
+              Zero-Shot GLiNER Neural Entity Recognizer ({methods.gliner?.matches_count ?? 0} matches)
+            </div>
+            <div style={{ fontFamily: mono, color: '#c084fc', whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.5, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '12px', minHeight: '80px', marginBottom: '12px' }}>
+              {methods.gliner?.anonymized_prompt || 'No output'}
+            </div>
+            {(methods.gliner?.matches || []).length > 0 ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={cellTh}>Entity</th><th style={cellTh}>Text</th><th style={cellTh}>Conf</th></tr></thead>
+                <tbody>
+                  {methods.gliner.matches.map((m, i) => (
+                    <tr key={i}>
+                      <td style={cellTd}><span style={{ color: '#c084fc', fontWeight: 600 }}>{m.entity_type}</span></td>
+                      <td style={{ ...cellTd, fontFamily: mono }}>{m.text}</td>
+                      <td style={cellTd}>{m.confidence ? `${(m.confidence * 100).toFixed(0)}%` : 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <Empty>No entities detected by GLiNER.</Empty>}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
+
