@@ -74,30 +74,21 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal Server Error", "error": str(exc)}
     )
 
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
-INDEX_HTML_PATH = os.path.join(TEMPLATES_DIR, "index.html")
+# The built React dashboard (run `npm run build` in frontend/ to produce this).
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+FRONTEND_INDEX = os.path.join(FRONTEND_DIST, "index.html")
+FRONTEND_ASSETS = os.path.join(FRONTEND_DIST, "assets")
+
+if os.path.isdir(FRONTEND_ASSETS):
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="frontend-assets")
 
 @app.get("/", response_class=HTMLResponse)
-async def render_dashboard(request: Request):
-    """Render the dashboard UI with environment settings."""
-    DEFAULT_CLERK_KEY = "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk"
-    clerk_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY") or DEFAULT_CLERK_KEY
-    clerk_url = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
-    try:
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "clerk_publishable_key": clerk_key,
-            "clerk_js_url": clerk_url
-        })
-    except Exception as e:
-        print(f"Template load error: {e}")
-        if os.path.exists(INDEX_HTML_PATH):
-            with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-                content = f.read()
-            content = content.replace("{{ clerk_publishable_key }}", clerk_key)
-            content = content.replace("{{ clerk_js_url }}", clerk_url)
-            return HTMLResponse(content=content)
-        raise HTTPException(status_code=500, detail=f"Dashboard template error: {e}")
+async def render_dashboard():
+    """Serve the built React dashboard."""
+    if os.path.exists(FRONTEND_INDEX):
+        with open(FRONTEND_INDEX, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    raise HTTPException(status_code=500, detail="Dashboard build not found. Run `npm run build` in frontend/.")
 
 @app.get("/health")
 async def health_check():
