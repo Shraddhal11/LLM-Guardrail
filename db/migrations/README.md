@@ -1,33 +1,25 @@
-# Database migrations
+# Database files
 
-| File | What it is | Runs on |
+## Latest schema (use this to create a fresh database)
+`db/schema/schema_current.sql`
+
+## Migrations, in order
+| File | What it does | Status |
 |---|---|---|
-| `db/schema/v0_current.sql` | Schema as it is today (dumped from the shared Neon DB). Reference only. | nothing |
-| `db/migrations/v1_upgrade.sql` | Draft of the new schema. Destructive. | not run yet |
+| `001_base_schema_v1.sql` | Base v1 schema. Drops and recreates the tables (destructive, back up first). | applied |
+| `002_add_anonymized_text.sql` | Adds the redacted text column to events. | applied |
+| `003_add_original_text_and_user_handling.sql` | Adds the original text column and the per-user handling setting. | applied |
 
-## Before running any migration
+Run one by hand with: `psql "<DATABASE_URL>" -f db/migrations/00X_name.sql`
 
-Back up the current data first. Run this from the repo root, using the connection string in `pii_proxy/db.py`:
+## Reference only
+`db/schema/schema_before_v1.sql`: the schema before v1 (old tables).
 
-```bash
-mkdir -p data
-/usr/lib/postgresql/18/bin/pg_dump "<DATABASE_URL>" --data-only --column-inserts > data/backup_$(date +%Y%m%d_%H%M).sql
-```
-
-Use the Postgres 18 client, because the server is Postgres 18 and `pg_dump` must match the server version.
-
-## Running a migration
-
-```bash
-psql "<DATABASE_URL>" -f db/migrations/v1_upgrade.sql
-```
-
-The file runs inside one transaction, so a failure rolls everything back.
+## Backups
+`scripts/migrate_v1.py` backs up the tables to `data/backups/` before dropping anything.
 
 ## Making someone admin
-
-After that person has logged in once through the dashboard (which creates their `users` row):
-
-```sql
-UPDATE users SET role = 'admin' WHERE email = 'you@gmail.com';
+After the user has logged in once, run this (replace the email):
+```bash
+python3 -c "import psycopg2,sys; c=psycopg2.connect(sys.argv[1]); cur=c.cursor(); cur.execute(\"UPDATE users SET role='admin' WHERE email=%s\", (sys.argv[2],)); c.commit(); print(cur.rowcount, 'row(s) updated')" "<DATABASE_URL>" "their@gmail.com"
 ```

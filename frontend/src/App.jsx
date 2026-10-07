@@ -3,7 +3,7 @@ import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserBut
 import Shell from './Shell.jsx';
 import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, Segmented } from './views.jsx';
 
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
+const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
 
 function LandingPage() {
   return (
