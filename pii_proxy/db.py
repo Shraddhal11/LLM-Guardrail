@@ -78,10 +78,10 @@ class DBUser(Base):
     __tablename__ = "users"
 
     id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    clerk_user_id = sa.Column(sa.Text, unique=True, nullable=True)
-    email = sa.Column(sa.Text, unique=True, nullable=False)
+    clerk_user_id = sa.Column(sa.Text, unique=True, nullable=True, index=True)
+    email = sa.Column(sa.Text, unique=True, nullable=False, index=True)
     name = sa.Column(sa.Text, nullable=True)
-    user_uuid = sa.Column(sa.Text, unique=True, nullable=False)
+    user_uuid = sa.Column(sa.Text, unique=True, nullable=False, index=True)
     role = sa.Column(sa.Text, nullable=False, default="user")
     action_mode = sa.Column(sa.Text, nullable=True)
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
@@ -93,10 +93,10 @@ class DBSession(Base):
     __tablename__ = "sessions"
 
     id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    external_id = sa.Column(sa.Text, nullable=True)
+    user_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    external_id = sa.Column(sa.Text, nullable=True, index=True)
     started_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
-    last_seen_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+    last_seen_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     user = relationship("DBUser", back_populates="sessions")
     events = relationship("DBEvent", back_populates="session", cascade="all, delete-orphan")
@@ -107,7 +107,7 @@ class DBAgent(Base):
     __table_args__ = (sa.UniqueConstraint("session_id", "agent_name"),)
 
     id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     agent_name = sa.Column(sa.Text, nullable=False)
     parent_agent_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
     initial_score = sa.Column(sa.Integer, nullable=False, default=100)
@@ -119,12 +119,12 @@ class DBEvent(Base):
     __tablename__ = "events"
 
     id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    session_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     agent_id = sa.Column(UUID(as_uuid=False), nullable=True)
     kind = sa.Column(sa.Text, nullable=False, default="prompt")
     model = sa.Column(sa.Text, nullable=True)
     action_mode = sa.Column(sa.Text, nullable=True)
-    decision = sa.Column(sa.Text, nullable=False)
+    decision = sa.Column(sa.Text, nullable=False, index=True)
     pii_count = sa.Column(sa.Integer, nullable=False, default=0)
     prompt_tokens = sa.Column(sa.Integer, nullable=True)
     completion_tokens = sa.Column(sa.Integer, nullable=True)
@@ -133,7 +133,7 @@ class DBEvent(Base):
     tool_name = sa.Column(sa.Text, nullable=True)
     anonymized_text = sa.Column(sa.Text, nullable=True)
     original_text = sa.Column(sa.Text, nullable=True)
-    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     session = relationship("DBSession", back_populates="events")
     findings = relationship("DBPIIFinding", back_populates="event", cascade="all, delete-orphan")
@@ -143,7 +143,7 @@ class DBPIIFinding(Base):
     __tablename__ = "pii_findings"
 
     id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    event_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    event_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
     category_id = sa.Column(sa.Integer, sa.ForeignKey("categories.id"), nullable=False)
     entity_type = sa.Column(sa.Text, nullable=False)
     placeholder = sa.Column(sa.Text, nullable=True)

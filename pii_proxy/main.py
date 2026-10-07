@@ -110,7 +110,7 @@ async def get_me(user: DBUser = Depends(get_current_user)):
         "action_mode": user.action_mode,
     }
 
-def _sessions_summary(db, user_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     q = (
         db.query(
             DBSession.id,
@@ -124,13 +124,19 @@ def _sessions_summary(db, user_uuid: Optional[str] = None) -> List[Dict[str, Any
         )
         .join(DBUser, DBUser.id == DBSession.user_id)
         .outerjoin(DBEvent, DBEvent.session_id == DBSession.id)
-        .group_by(DBSession.id, DBUser.id)
-        .order_by(DBSession.last_seen_at.desc())
     )
     if user_uuid:
         q = q.filter(DBUser.user_uuid == user_uuid)
-    rows = q.all()
-    agent_counts = dict(db.query(DBAgent.session_id, func.count(DBAgent.id)).group_by(DBAgent.session_id).all())
+    rows = q.group_by(DBSession.id, DBUser.id).order_by(DBSession.last_seen_at.desc()).limit(limit).all()
+    session_ids = [r.id for r in rows]
+    agent_counts = {}
+    if session_ids:
+        agent_counts = dict(
+            db.query(DBAgent.session_id, func.count(DBAgent.id))
+            .filter(DBAgent.session_id.in_(session_ids))
+            .group_by(DBAgent.session_id)
+            .all()
+        )
     return [
         {
             "session_id": r.id,
