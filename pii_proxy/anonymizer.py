@@ -84,6 +84,30 @@ class PIIAnonymizer:
         anonymized_text = "".join(result_chars)
         return anonymized_text, matches
 
+    def process_text_with_matches(
+        self,
+        text: str,
+        matches: List[PIIMatch],
+        vault: PIISessionVault,
+        mode: str = "ANONYMIZE"
+    ) -> str:
+        if not matches:
+            return text
+        result_chars = list(text)
+        sorted_matches = sorted(matches, key=lambda x: x.start, reverse=True)
+        for match in sorted_matches:
+            if mode == "ANONYMIZE":
+                replacement = vault.get_or_create_placeholder(match.text, match.entity_type)
+            elif mode == "REDACT":
+                replacement = f"[REDACTED_{match.entity_type}]"
+            elif mode == "HASH":
+                h = hashlib.sha256(match.text.encode()).hexdigest()[:8]
+                replacement = f"[HASH:{h}]"
+            else:
+                replacement = f"[REDACTED_{match.entity_type}]"
+            result_chars[match.start:match.end] = list(replacement)
+        return "".join(result_chars)
+
     def process_messages(
         self,
         messages: List[Dict[str, Any]],

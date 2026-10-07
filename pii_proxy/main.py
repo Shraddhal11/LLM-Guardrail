@@ -19,7 +19,7 @@ from pii_proxy.anonymizer import PIIAnonymizer, PIISessionVault
 from pii_proxy.audit import audit_logger
 from pii_proxy.auth import get_claims, get_current_user, require_admin, assert_owner_or_admin
 from pii_proxy.context import identity_from_request
-from pii_proxy.db import init_db, SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBCategory
+from pii_proxy.db import init_db, SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBCategory, DBPIIMethodBenchmarkLog
 
 app = FastAPI(title="PII Data Anonymization Governance Proxy Platform", version="2.0.0")
 
@@ -688,6 +688,131 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
         ],
         "latency_ms": round(latency_ms, 2)
     }
+
+class BenchmarkCompareRequest(BaseModel):
+    prompt: str
+    mode: Optional[str] = "ANONYMIZE"
+
+@app.post("/api/benchmark/compare")
+async def benchmark_compare(req: BenchmarkCompareRequest, user: DBUser = Depends(get_current_user)):
+    """
+    Compare all 3 PII Detection Methods side-by-side:
+    1. Dual-Engine Regex
+    2. Microsoft Presidio + SpaCy
+    3. GLiNER Zero-Shot Transformer
+    Stores benchmark result in pii_method_benchmark_logs database table.
+    """
+    req_id = f"bench_{uuid.uuid4().hex[:8]}"
+    mode = req.mode or "ANONYMIZE"
+    prompt = req.prompt
+    vault = PIISessionVault()
+
+    # 1. Method 1: Regex
+    t0 = time.time()
+    matches_regex = detector.detect_regex(prompt)
+    anon_regex = anonymizer.process_text_with_matches(prompt, matches_regex, vault, mode)
+    lat_regex = (time.time() - t0) * 1000.0
+
+    # 2. Method 2: Presidio
+    t0 = time.time()
+    matches_presidio = detector.detect_presidio(prompt)
+    anon_presidio = anonymizer.process_text_with_matches(prompt, matches_presidio, vault, mode)
+    lat_presidio = (time.time() - t0) * 1000.0
+
+    # 3. Method 3: GLiNER
+    t0 = time.time()
+    matches_gliner = detector.detect_gliner(prompt)
+    anon_gliner = anonymizer.process_text_with_matches(prompt, matches_gliner, vault, mode)
+    lat_gliner = (time.time() - t0) * 1000.0
+
+    # Format JSON match payloads
+    regex_json = json.dumps([{"entity_type": m.entity_type, "category_id": m.category_id, "text": m.text, "confidence": m.confidence} for m in matches_regex])
+    presidio_json = json.dumps([{"entity_type": m.entity_type, "category_id": m.category_id, "text": m.text, "confidence": m.confidence} for m in matches_presidio])
+    gliner_json = json.dumps([{"entity_type": m.entity_type, "category_id": m.category_id, "text": m.text, "confidence": m.confidence} for m in matches_gliner])
+
+    # Store benchmark in dedicated database table (pii_method_benchmark_logs)
+    db = SessionLocal()
+    try:
+        log_entry = DBPIIMethodBenchmarkLog(
+            request_id=req_id,
+            user_uuid=user.user_uuid,
+            original_prompt=prompt,
+            regex_matches_count=len(matches_regex),
+            regex_latency_ms=round(lat_regex, 2),
+            regex_anonymized_prompt=anon_regex,
+            regex_matches_json=regex_json,
+            presidio_matches_count=len(matches_presidio),
+            presidio_latency_ms=round(lat_presidio, 2),
+            presidio_anonymized_prompt=anon_presidio,
+            presidio_matches_json=presidio_json,
+            gliner_matches_count=len(matches_gliner),
+            gliner_latency_ms=round(lat_gliner, 2),
+            gliner_anonymized_prompt=anon_gliner,
+            gliner_matches_json=gliner_json
+        )
+        db.add(log_entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Benchmark log insert warning: {e}")
+    finally:
+        db.close()
+
+    return {
+        "request_id": req_id,
+        "original_prompt": prompt,
+        "action_mode": mode,
+        "methods": {
+            "regex": {
+                "name": "Dual-Engine Regex",
+                "latency_ms": round(lat_regex, 2),
+                "matches_count": len(matches_regex),
+                "anonymized_prompt": anon_regex,
+                "matches": json.loads(regex_json)
+            },
+            "presidio": {
+                "name": "Microsoft Presidio + SpaCy",
+                "latency_ms": round(lat_presidio, 2),
+                "matches_count": len(matches_presidio),
+                "anonymized_prompt": anon_presidio,
+                "matches": json.loads(presidio_json)
+            },
+            "gliner": {
+                "name": "GLiNER Zero-Shot Transformer",
+                "latency_ms": round(lat_gliner, 2),
+                "matches_count": len(matches_gliner),
+                "anonymized_prompt": anon_gliner,
+                "matches": json.loads(gliner_json)
+            }
+        }
+    }
+
+@app.get("/api/benchmark/logs")
+async def get_benchmark_logs(limit: int = 20, user: DBUser = Depends(get_current_user)):
+    """Fetch recent 3-method benchmark comparison records from Neon DB."""
+    db = SessionLocal()
+    try:
+        logs = db.query(DBPIIMethodBenchmarkLog).filter(DBPIIMethodBenchmarkLog.user_uuid == user.user_uuid).order_by(DBPIIMethodBenchmarkLog.created_at.desc()).limit(limit).all()
+        return [
+            {
+                "id": log.id,
+                "request_id": log.request_id,
+                "original_prompt": log.original_prompt,
+                "regex_matches_count": log.regex_matches_count,
+                "regex_latency_ms": log.regex_latency_ms,
+                "regex_anonymized": log.regex_anonymized_prompt,
+                "presidio_matches_count": log.presidio_matches_count,
+                "presidio_latency_ms": log.presidio_latency_ms,
+                "presidio_anonymized": log.presidio_anonymized_prompt,
+                "gliner_matches_count": log.gliner_matches_count,
+                "gliner_latency_ms": log.gliner_latency_ms,
+                "gliner_anonymized": log.gliner_anonymized_prompt,
+                "created_at": log.created_at.isoformat() if log.created_at else None
+            }
+            for log in logs
+        ]
+    finally:
+        db.close()
 
 @app.get("/v1/models")
 @app.get("/models")

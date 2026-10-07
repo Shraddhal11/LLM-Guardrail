@@ -52,20 +52,30 @@ class PIIDetector:
 
     def __init__(self):
         self._compile_regexes()
-        self._init_presidio()
-
-    def _init_presidio(self):
-        """Try initializing Microsoft Presidio / SpaCy if enabled via env var."""
         self.presidio_analyzer = None
-        import os
-        if os.getenv("ENABLE_PRESIDIO", "false").lower() == "true":
+        self.gliner_model = None
+
+    def _get_presidio(self):
+        """Lazy load Microsoft Presidio AnalyzerEngine."""
+        if self.presidio_analyzer is None:
             try:
-                import spacy
-                if spacy.util.is_package("en_core_web_sm"):
-                    from presidio_analyzer import AnalyzerEngine
-                    self.presidio_analyzer = AnalyzerEngine()
-            except Exception:
-                self.presidio_analyzer = None
+                from presidio_analyzer import AnalyzerEngine
+                self.presidio_analyzer = AnalyzerEngine()
+            except Exception as e:
+                print(f"Presidio load warning: {e}")
+                self.presidio_analyzer = False
+        return self.presidio_analyzer if self.presidio_analyzer is not False else None
+
+    def _get_gliner(self):
+        """Lazy load GLiNER Zero-Shot Transformer model."""
+        if self.gliner_model is None:
+            try:
+                from gliner import GLiNER
+                self.gliner_model = GLiNER.from_pretrained("urchade/gliner_small-v2.1")
+            except Exception as e:
+                print(f"GLiNER load warning: {e}")
+                self.gliner_model = False
+        return self.gliner_model if self.gliner_model is not False else None
 
     def _compile_regexes(self):
         """Compile optimized regex patterns for exact match PII categories."""
@@ -216,7 +226,33 @@ class PIIDetector:
                     confidence=confidence
                 ))
 
-        # Run regex rules in priority order
+    def _deduplicate(self, matches: List[PIIMatch]) -> List[PIIMatch]:
+        """Deduplicate and remove overlapping ranges (keep highest confidence / longest match)."""
+        sorted_matches = sorted(matches, key=lambda x: (x.start, -(x.end - x.start), -x.confidence))
+        filtered: List[PIIMatch] = []
+        last_end = -1
+        for m in sorted_matches:
+            if m.start >= last_end:
+                filtered.append(m)
+                last_end = m.end
+        return filtered
+
+    def detect_regex(self, text: str) -> List[PIIMatch]:
+        """Method 1: Pure Regex & Heuristic Pattern Engine."""
+        matches: List[PIIMatch] = []
+
+        def _add_matches(regex_obj, entity_type: str, category_id: int, confidence: float = 0.95):
+            for m in regex_obj.finditer(text):
+                matches.append(PIIMatch(
+                    entity_type=entity_type,
+                    category_id=category_id,
+                    category_name=self.CATEGORIES[category_id],
+                    start=m.start(),
+                    end=m.end(),
+                    text=m.group(0),
+                    confidence=confidence
+                ))
+
         _add_matches(self.regex_email, "EMAIL", 6, 0.99)
         _add_matches(self.regex_url, "URL", 14, 0.98)
         _add_matches(self.regex_ipv4, "IP_ADDRESS", 15, 0.99)
@@ -225,7 +261,7 @@ class PIIDetector:
         _add_matches(self.regex_fax, "FAX", 5, 0.95)
         _add_matches(self.regex_phone, "PHONE", 4, 0.90)
         _add_matches(self.regex_mrn, "MRN", 8, 0.96)
-        _add_matches(self.regex_patient_id, "PATIENT_ID", 8, 0.9)
+        _add_matches(self.regex_patient_id, "PATIENT_ID", 8, 0.90)
         _add_matches(self.regex_health_plan, "HEALTH_BENEFICIARY_ID", 9, 0.95)
         _add_matches(self.regex_credit_card, "ACCOUNT_NUMBER", 10, 0.98)
         _add_matches(self.regex_bank_account, "ACCOUNT_NUMBER", 10, 0.95)
@@ -240,7 +276,6 @@ class PIIDetector:
         _add_matches(self.regex_city_county, "GEO_DATA", 2, 0.88)
         _add_matches(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94)
 
-        # Name context heuristic regex
         for m in self.regex_name_context.finditer(text):
             full_match = m.group(0)
             name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
@@ -256,46 +291,107 @@ class PIIDetector:
                 confidence=0.91
             ))
 
-        # Secondary Presidio NLP analysis if installed
-        if self.presidio_analyzer:
-            try:
-                results = self.presidio_analyzer.analyze(
-                    text=text,
-                    entities=["PERSON", "LOCATION", "NRP", "DATE_TIME"],
-                    language="en"
-                )
-                for res in results:
-                    if res.entity_type == "PERSON":
-                        matches.append(PIIMatch(
-                            entity_type="NAME",
-                            category_id=1,
-                            category_name=self.CATEGORIES[1],
-                            start=res.start,
-                            end=res.end,
-                            text=text[res.start:res.end],
-                            confidence=res.score
-                        ))
-                    elif res.entity_type in ["LOCATION", "GPE"]:
-                        matches.append(PIIMatch(
-                            entity_type="GEO_DATA",
-                            category_id=2,
-                            category_name=self.CATEGORIES[2],
-                            start=res.start,
-                            end=res.end,
-                            text=text[res.start:res.end],
-                            confidence=res.score
-                        ))
-            except Exception:
-                pass
+        return self._deduplicate(matches)
 
-        # Deduplicate and remove overlapping ranges (keep highest confidence / longest match)
-        sorted_matches = sorted(matches, key=lambda x: (x.start, -(x.end - x.start), -x.confidence))
-        filtered: List[PIIMatch] = []
-        last_end = -1
+    def detect_presidio(self, text: str) -> List[PIIMatch]:
+        """Method 2: Microsoft Presidio Analyzer + SpaCy NLP Engine."""
+        matches: List[PIIMatch] = []
+        analyzer = self._get_presidio()
+        if not analyzer:
+            # Fallback to regex if Presidio engine is unavailable
+            return self.detect_regex(text)
 
-        for m in sorted_matches:
-            if m.start >= last_end:
-                filtered.append(m)
-                last_end = m.end
+        try:
+            results = analyzer.analyze(
+                text=text,
+                language="en"
+            )
+            type_mapping = {
+                "PERSON": ("NAME", 1),
+                "LOCATION": ("GEO_DATA", 2),
+                "DATE_TIME": ("INDIVIDUAL_DATE", 3),
+                "PHONE_NUMBER": ("PHONE", 4),
+                "EMAIL_ADDRESS": ("EMAIL", 6),
+                "US_SSN": ("SSN", 7),
+                "MEDICAL_LICENSE": ("MRN", 8),
+                "CREDIT_CARD": ("ACCOUNT_NUMBER", 10),
+                "US_DRIVER_LICENSE": ("LICENSE_NUMBER", 11),
+                "IP_ADDRESS": ("IP_ADDRESS", 15),
+                "URL": ("URL", 14)
+            }
+            for res in results:
+                ent_type, cat_id = type_mapping.get(res.entity_type, (res.entity_type, 1))
+                matches.append(PIIMatch(
+                    entity_type=ent_type,
+                    category_id=cat_id,
+                    category_name=self.CATEGORIES.get(cat_id, "PII Entity"),
+                    start=res.start,
+                    end=res.end,
+                    text=text[res.start:res.end],
+                    confidence=round(float(res.score), 3)
+                ))
+        except Exception as e:
+            print(f"Presidio analyze error: {e}")
+            return self.detect_regex(text)
 
-        return filtered
+        return self._deduplicate(matches)
+
+    def detect_gliner(self, text: str) -> List[PIIMatch]:
+        """Method 3: GLiNER Zero-Shot Transformer Entity Extraction Engine."""
+        matches: List[PIIMatch] = []
+        gliner = self._get_gliner()
+        if not gliner:
+            # Fallback to regex if GLiNER is unavailable
+            return self.detect_regex(text)
+
+        labels = [
+            "person", "patient_name", "employee_name", 
+            "location", "address", "city", 
+            "birth_date", "date",
+            "phone_number", "email", "ssn", 
+            "medical_record_number", "account_number", 
+            "license_number", "ip_address", "url"
+        ]
+
+        label_mapping = {
+            "person": ("NAME", 1),
+            "patient_name": ("NAME", 1),
+            "employee_name": ("NAME", 1),
+            "location": ("GEO_DATA", 2),
+            "address": ("GEO_DATA", 2),
+            "city": ("GEO_DATA", 2),
+            "birth_date": ("INDIVIDUAL_DATE", 3),
+            "date": ("INDIVIDUAL_DATE", 3),
+            "phone_number": ("PHONE", 4),
+            "email": ("EMAIL", 6),
+            "ssn": ("SSN", 7),
+            "medical_record_number": ("MRN", 8),
+            "account_number": ("ACCOUNT_NUMBER", 10),
+            "license_number": ("LICENSE_NUMBER", 11),
+            "ip_address": ("IP_ADDRESS", 15),
+            "url": ("URL", 14)
+        }
+
+        try:
+            entities = gliner.predict_entities(text, labels, threshold=0.35)
+            for ent in entities:
+                lbl = ent["label"]
+                ent_type, cat_id = label_mapping.get(lbl, (lbl.upper(), 1))
+                matches.append(PIIMatch(
+                    entity_type=ent_type,
+                    category_id=cat_id,
+                    category_name=self.CATEGORIES.get(cat_id, "PII Entity"),
+                    start=ent["start"],
+                    end=ent["end"],
+                    text=ent["text"],
+                    confidence=round(float(ent["score"]), 3)
+                ))
+        except Exception as e:
+            print(f"GLiNER predict error: {e}")
+            return self.detect_regex(text)
+
+        return self._deduplicate(matches)
+
+    def detect(self, text: str) -> List[PIIMatch]:
+        """Default baseline detection for standard proxy endpoints."""
+        return self.detect_regex(text)

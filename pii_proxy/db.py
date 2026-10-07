@@ -165,6 +165,35 @@ class DBReceipt(Base):
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
 
+class DBPIIMethodBenchmarkLog(Base):
+    __tablename__ = "pii_method_benchmark_logs"
+
+    id = sa.Column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    request_id = sa.Column(sa.String(64), index=True, nullable=False)
+    user_uuid = sa.Column(sa.String(64), index=True, nullable=True)
+    original_prompt = sa.Column(sa.Text, nullable=False)
+    
+    # Method 1: Dual-Engine Regex
+    regex_matches_count = sa.Column(sa.Integer, default=0)
+    regex_latency_ms = sa.Column(sa.Float, default=0.0)
+    regex_anonymized_prompt = sa.Column(sa.Text, nullable=True)
+    regex_matches_json = sa.Column(sa.Text, nullable=True)
+
+    # Method 2: Microsoft Presidio + SpaCy
+    presidio_matches_count = sa.Column(sa.Integer, default=0)
+    presidio_latency_ms = sa.Column(sa.Float, default=0.0)
+    presidio_anonymized_prompt = sa.Column(sa.Text, nullable=True)
+    presidio_matches_json = sa.Column(sa.Text, nullable=True)
+
+    # Method 3: GLiNER Zero-Shot Transformer
+    gliner_matches_count = sa.Column(sa.Integer, default=0)
+    gliner_latency_ms = sa.Column(sa.Float, default=0.0)
+    gliner_anonymized_prompt = sa.Column(sa.Text, nullable=True)
+    gliner_matches_json = sa.Column(sa.Text, nullable=True)
+
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+
+
 def init_db():
     """Create any missing tables. Existing v1 tables are left as they are."""
     Base.metadata.create_all(bind=engine)

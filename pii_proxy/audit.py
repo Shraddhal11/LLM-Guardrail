@@ -187,7 +187,7 @@ class AuditLogger:
                     func.coalesce(func.sum(DBEvent.completion_tokens), 0),
                     func.coalesce(func.sum(DBEvent.latency_ms), 0),
                 )
-                .group_by(DBEvent.decision, action)
+                .group_by(DBEvent.decision, DBEvent.action_mode)
                 .all()
             )
             tokens_in = tokens_out = 0
