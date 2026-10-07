@@ -80,7 +80,8 @@ INDEX_HTML_PATH = os.path.join(TEMPLATES_DIR, "index.html")
 @app.get("/", response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Render the dashboard UI with environment settings."""
-    clerk_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "")
+    DEFAULT_CLERK_KEY = "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk"
+    clerk_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY") or DEFAULT_CLERK_KEY
     clerk_url = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
     try:
         return templates.TemplateResponse("index.html", {

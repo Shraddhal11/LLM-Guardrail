@@ -742,9 +742,26 @@
             }
         }
 
+        async function ensureClerkLoaded() {
+            if (window.Clerk && (window.Clerk.openSignIn || window.Clerk.mountSignIn)) return true;
+            for (let i = 0; i < 25; i++) {
+                await new Promise(r => setTimeout(r, 120));
+                if (window.Clerk && (window.Clerk.openSignIn || window.Clerk.mountSignIn)) return true;
+            }
+            return false;
+        }
+
         async function openSignIn() {
-            if (!window.Clerk) {
-                alert('Clerk Authentication SDK is loading... Please wait a moment.');
+            const ready = await ensureClerkLoaded();
+            if (!ready) {
+                if (window.Clerk && window.Clerk.mountSignIn) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignIn(container);
+                    return;
+                }
+                alert('Clerk Authentication SDK is taking a moment to load. Please try again in 2 seconds.');
                 return;
             }
             try {
@@ -768,8 +785,16 @@
         }
 
         async function openSignUp() {
-            if (!window.Clerk) {
-                alert('Clerk Authentication SDK is loading... Please wait a moment.');
+            const ready = await ensureClerkLoaded();
+            if (!ready) {
+                if (window.Clerk && window.Clerk.mountSignUp) {
+                    const container = document.getElementById('clerk-mount-container');
+                    container.innerHTML = '';
+                    document.getElementById('clerk-modal-overlay').style.display = 'flex';
+                    window.Clerk.mountSignUp(container);
+                    return;
+                }
+                alert('Clerk Authentication SDK is taking a moment to load. Please try again in 2 seconds.');
                 return;
             }
             try {
