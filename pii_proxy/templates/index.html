@@ -706,9 +706,10 @@
                         }
 
                         try {
+                            const headers = await getAuthHeaders();
                             const res = await fetch('/api/users/sync', {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: headers,
                                 body: JSON.stringify({
                                     clerk_user_id: user.id,
                                     email: user.primaryEmailAddress ? user.primaryEmailAddress.emailAddress : '',
@@ -923,9 +924,23 @@
             syncActiveActionMode();
         });
 
+        async function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (window.Clerk && window.Clerk.session) {
+                try {
+                    const token = await window.Clerk.session.getToken();
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
+                } catch (e) {}
+            }
+            return headers;
+        }
+
         async function fetchUserStats() {
+            if (!currentUserUuid || currentUserUuid === 'undefined') return;
             try {
-                const res = await fetch(`/api/stats?user_uuid=${currentUserUuid}`);
+                const headers = await getAuthHeaders();
+                const res = await fetch(`/api/stats?user_uuid=${currentUserUuid}`, { headers });
+                if (!res.ok) return;
                 const data = await res.json();
                 document.getElementById('stat-requests').textContent = data.total_requests || 0;
                 document.getElementById('stat-pii').textContent = data.total_pii_detected || 0;
@@ -935,8 +950,11 @@
         let queryCache = {};
 
         async function fetchUserQueries() {
+            if (!currentUserUuid || currentUserUuid === 'undefined') return;
             try {
-                const res = await fetch(`/api/users/${currentUserUuid}/queries`);
+                const headers = await getAuthHeaders();
+                const res = await fetch(`/api/users/${currentUserUuid}/queries`, { headers });
+                if (!res.ok) return;
                 const queries = await res.json();
                 const tbody = document.getElementById('queryTableBody');
                 if (!queries || queries.length === 0) {
