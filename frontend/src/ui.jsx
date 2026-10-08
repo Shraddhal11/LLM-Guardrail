@@ -70,6 +70,27 @@ export function Loader({ text = 'Loading data…' }) {
   );
 }
 
+export function Loader3D({ title = 'Initializing Governance Engine...', subtitle = 'Syncing session state • Verifying cryptographic keys' }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'radial-gradient(circle at center, #0f172a 0%, #060913 75%)', textAlign: 'center', padding: '20px', fontFamily: "'Outfit', system-ui, sans-serif" }}>
+      <div style={{ position: 'relative', width: '120px', height: '120px', perspective: '1000px', transformStyle: 'preserve-3d', marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,242,254,0.3) 0%, rgba(168,85,247,0.15) 50%, transparent 70%)', filter: 'blur(12px)' }} />
+        <div style={{ position: 'absolute', width: '110px', height: '110px', borderRadius: '50%', border: '3px solid transparent', borderTop: '3px solid #00f2fe', borderBottom: '3px solid #00f2fe', boxShadow: '0 0 22px rgba(0, 242, 254, 0.45)', animation: 'spin3dX 3.5s linear infinite' }} />
+        <div style={{ position: 'absolute', width: '85px', height: '85px', borderRadius: '50%', border: '3px solid transparent', borderLeft: '3px solid #a855f7', borderRight: '3px solid #a855f7', boxShadow: '0 0 20px rgba(168, 85, 247, 0.45)', animation: 'spin3dY 2.8s linear infinite' }} />
+        <div style={{ position: 'absolute', width: '60px', height: '60px', borderRadius: '50%', border: '2.5px solid transparent', borderTop: '2.5px solid #38bdf8', borderRight: '2.5px solid #38bdf8', animation: 'spin3dX 2s linear infinite reverse' }} />
+        <div style={{ position: 'absolute', width: '22px', height: '22px', borderRadius: '50%', background: 'linear-gradient(135deg, #00f2fe, #a855f7)', animation: 'pulseCore 2.2s ease-in-out infinite' }} />
+      </div>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: '1.3rem', fontWeight: 700, background: 'linear-gradient(135deg, #ffffff 20%, #38bdf8 65%, #a855f7 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.02em' }}>
+        {title}
+      </h3>
+      <p style={{ margin: 0, fontSize: '0.88rem', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#00f2fe', boxShadow: '0 0 10px #00f2fe', animation: 'pulseDot 1.5s ease-in-out infinite' }} />
+        {subtitle}
+      </p>
+    </div>
+  );
+}
+
 export function ScrollBox({ children, maxHeight = 480 }) {
   return <div style={{ maxHeight, overflow: 'auto' }}>{children}</div>;
 }

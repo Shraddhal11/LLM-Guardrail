@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
+import { Loader3D } from './ui.jsx';
 import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
@@ -141,7 +142,7 @@ function Dashboard() {
   };
 
   if (me === undefined) {
-    return <div style={{ color: '#8a97b1', padding: '40px', fontFamily: 'system-ui, sans-serif', background: '#0b1020', minHeight: '100vh' }}>Loading…</div>;
+    return <Loader3D />;
   }
   if (me === null) {
     return <div style={{ color: '#f87171', padding: '40px', fontFamily: 'system-ui, sans-serif', background: '#0b1020', minHeight: '100vh' }}>Could not load your account. Refresh to try again.</div>;
