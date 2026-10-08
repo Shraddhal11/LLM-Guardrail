@@ -413,6 +413,17 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [violations, setViolations] = useState([]);
+
+  useEffect(() => {
+    const syncMode = async () => {
+      const r = await authedFetch('/api/me');
+      if (r.ok) {
+        const data = await r.json();
+        setMode(data.action_mode || '');
+      }
+    };
+    syncMode();
+  }, [authedFetch]);
   // Vite's dev server (5173) only proxies API calls for browsing the dashboard itself;
   // the real backend a chat client connects to is always on 8000 in local dev.
   // Everywhere else (Vercel, or the built dashboard served by the backend directly),
