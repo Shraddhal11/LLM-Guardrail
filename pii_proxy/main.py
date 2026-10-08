@@ -83,6 +83,10 @@ if os.path.isdir(FRONTEND_ASSETS):
     app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="frontend-assets")
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/overview", response_class=HTMLResponse)
+@app.get("/activity", response_class=HTMLResponse)
+@app.get("/users", response_class=HTMLResponse)
+@app.get("/test", response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Serve the complete dashboard with 3-method AI benchmark sandbox and initial loader state."""
     clerk_pub_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk")

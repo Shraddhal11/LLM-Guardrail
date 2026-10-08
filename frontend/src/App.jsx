@@ -59,16 +59,56 @@ function LandingPage() {
   );
 }
 
+function parseUrl(path, searchStr) {
+  const search = new URLSearchParams(searchStr);
+  const scope = search.get('scope') || 'all';
+  const view = search.get('view') || 'requests';
+  const event = search.get('event') || null;
+  const session = search.get('session') ? { session_id: search.get('session'), external_id: search.get('session') } : null;
+
+  if (path.startsWith('/activity')) {
+    return { page: 'activity', params: { view, scope, event, session } };
+  } else if (path.startsWith('/users')) {
+    return { page: 'users', params: {} };
+  } else if (path.startsWith('/test')) {
+    return { page: 'test', params: {} };
+  }
+  return { page: 'overview', params: { scope } };
+}
+
+function navToUrl(page, params = {}) {
+  const search = new URLSearchParams();
+  if (params.scope && params.scope !== 'all') search.set('scope', params.scope);
+  if (params.view && params.view !== 'requests') search.set('view', params.view);
+  if (params.event) search.set('event', params.event);
+  if (params.session?.session_id) search.set('session', params.session.session_id);
+
+  const query = search.toString() ? `?${search.toString()}` : '';
+  if (page === 'activity') return `/activity${query}`;
+  if (page === 'users') return `/users${query}`;
+  if (page === 'user') return `/users${query}`;
+  if (page === 'test') return `/test${query}`;
+  return `/overview${query}`;
+}
+
 function Dashboard() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const [me, setMe] = useState(undefined);
-  const [nav, setNav] = useState({ page: 'overview', params: {} });
+  const [nav, setNav] = useState(() => parseUrl(window.location.pathname, window.location.search));
 
   const authedFetch = useCallback(async (url, options = {}) => {
     const token = await getToken();
     return fetch(url, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
   }, [getToken]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setNav(parseUrl(window.location.pathname, window.location.search));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -92,7 +132,13 @@ function Dashboard() {
     load();
   }, [user, authedFetch]);
 
-  const go = (page, params = {}) => setNav({ page, params });
+  const go = (page, params = {}) => {
+    const url = navToUrl(page, params);
+    if (window.location.pathname + window.location.search !== url) {
+      window.history.pushState(null, '', url);
+    }
+    setNav({ page, params });
+  };
 
   if (me === undefined) {
     return <div style={{ color: '#8a97b1', padding: '40px', fontFamily: 'system-ui, sans-serif', background: '#0b1020', minHeight: '100vh' }}>Loading…</div>;
