@@ -86,6 +86,7 @@ if os.path.isdir(FRONTEND_ASSETS):
 @app.get("/overview", response_class=HTMLResponse)
 @app.get("/activity", response_class=HTMLResponse)
 @app.get("/users", response_class=HTMLResponse)
+@app.get("/trust", response_class=HTMLResponse)
 @app.get("/test", response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Serve the complete dashboard with 3-method AI benchmark sandbox and initial loader state."""
@@ -515,6 +516,114 @@ async def user_daily(user_uuid: str, days: int = 14, user: DBUser = Depends(get_
             .all()
         )
         return [{"day": str(d), "requests": r, "violations": v} for d, r, v in rows]
+    finally:
+        db.close()
+
+@app.get("/api/users/{user_uuid}/trust-analytics")
+async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_current_user)):
+    """
+    Per-user token tracking across all requests, authority-trust score,
+    violation frequency, and effective-use score.
+    """
+    assert_owner_or_admin(user, user_uuid)
+    db = SessionLocal()
+    try:
+        target_user = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        events = (
+            db.query(
+                DBEvent.decision,
+                DBEvent.action_mode,
+                DBEvent.prompt_tokens,
+                DBEvent.completion_tokens,
+                DBEvent.pii_count,
+                DBEvent.model,
+            )
+            .join(DBSession, DBSession.id == DBEvent.session_id)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBUser.user_uuid == user_uuid)
+            .all()
+        )
+
+        total_requests = len(events)
+        prompt_tokens = sum(e.prompt_tokens or 0 for e in events)
+        completion_tokens = sum(e.completion_tokens or 0 for e in events)
+        total_tokens = prompt_tokens + completion_tokens
+
+        clean_requests = sum(1 for e in events if e.decision == "allow")
+        redacted_requests = sum(1 for e in events if e.decision == "redact")
+        blocked_requests = sum(1 for e in events if e.decision == "block")
+        total_violations = redacted_requests + blocked_requests
+
+        clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if e.decision == "allow")
+        violation_tokens = total_tokens - clean_tokens
+
+        violation_frequency_pct = round((total_violations / total_requests) * 100, 2) if total_requests else 0.0
+
+        if total_tokens > 0:
+            token_efficiency = (clean_tokens / total_tokens) * 100
+        else:
+            token_efficiency = 100.0 if total_requests == 0 else ((clean_requests / total_requests) * 100)
+
+        compliance_rate = ((clean_requests / total_requests) * 100) if total_requests else 100.0
+        effective_use_score = round(0.6 * token_efficiency + 0.4 * compliance_rate, 1)
+
+        base_trust = 85.0
+        if target_user.role == "admin":
+            base_trust += 10.0
+        trust_penalty = (violation_frequency_pct * 0.6) + (blocked_requests * 4.0)
+        volume_credit = min(10.0, total_requests * 0.3)
+        authority_trust_score = round(max(5.0, min(100.0, base_trust - trust_penalty + volume_credit)), 1)
+
+        if authority_trust_score >= 88:
+            trust_tier = "Tier 1: High Authority (Zero Risk)"
+            trust_color = "#10b981"
+        elif authority_trust_score >= 70:
+            trust_tier = "Tier 2: Trusted Operator"
+            trust_color = "#00f2fe"
+        elif authority_trust_score >= 50:
+            trust_tier = "Tier 3: Moderate Trust (Monitored)"
+            trust_color = "#f59e0b"
+        else:
+            trust_tier = "Tier 4: Restricted (High Risk)"
+            trust_color = "#f43f5e"
+
+        model_usage = {}
+        for e in events:
+            m = e.model or "default"
+            t = (e.prompt_tokens or 0) + (e.completion_tokens or 0)
+            model_usage[m] = model_usage.get(m, 0) + t
+
+        return {
+            "user_uuid": user_uuid,
+            "email": target_user.email,
+            "role": target_user.role,
+            "action_mode": target_user.action_mode or config.PII_ACTION_MODE,
+            "tokens": {
+                "total_tokens": total_tokens,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "clean_tokens": clean_tokens,
+                "violation_tokens": violation_tokens,
+                "avg_tokens_per_request": round(total_tokens / total_requests, 1) if total_requests else 0,
+                "model_usage": model_usage,
+            },
+            "metrics": {
+                "total_requests": total_requests,
+                "clean_requests": clean_requests,
+                "redacted_requests": redacted_requests,
+                "blocked_requests": blocked_requests,
+                "total_violations": total_violations,
+                "violation_frequency_pct": violation_frequency_pct,
+                "compliance_rate_pct": round(compliance_rate, 2),
+                "effective_use_score": effective_use_score,
+                "authority_trust_score": authority_trust_score,
+                "trust_tier": trust_tier,
+                "trust_color": trust_color,
+            }
+        }
     finally:
         db.close()
 

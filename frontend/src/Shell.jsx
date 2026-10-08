@@ -4,6 +4,7 @@ import { C } from './ui.jsx';
 const navIcons = {
   overview: '⚡',
   activity: '📊',
+  trust: '🛡️',
   users: '👥',
   test: '🧪',
 };

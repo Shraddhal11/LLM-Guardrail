@@ -718,3 +718,497 @@ export function TestView({ authedFetch }) {
     </div>
   );
 }
+
+export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
+  const [selectedUuid, setSelectedUuid] = useState(initialUuid || me?.user_uuid || '');
+  const [data, setData] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (isAdmin) {
+      authedFetch('/api/admin/users')
+        .then(r => r.ok && r.json())
+        .then(u => {
+          if (Array.isArray(u)) setUsers(u);
+        })
+        .catch(() => {});
+    }
+  }, [isAdmin, authedFetch]);
+
+  useEffect(() => {
+    const uuid = selectedUuid || me?.user_uuid;
+    if (!uuid) return;
+    let active = true;
+    setLoading(true);
+    authedFetch(`/api/users/${uuid}/trust-analytics`)
+      .then(r => r.ok && r.json())
+      .then(res => {
+        if (active && res) {
+          setData(res);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [selectedUuid, me?.user_uuid, authedFetch]);
+
+  const tokens = data?.tokens || {};
+  const metrics = data?.metrics || {};
+
+  const totalTokens = tokens.total_tokens || 0;
+  const promptTokens = tokens.prompt_tokens || 0;
+  const completionTokens = tokens.completion_tokens || 0;
+  const cleanTokens = tokens.clean_tokens || 0;
+  const violationTokens = tokens.violation_tokens || 0;
+  const avgTokens = tokens.avg_tokens_per_request || 0;
+  const modelUsage = tokens.model_usage || {};
+
+  const totalRequests = metrics.total_requests || 0;
+  const cleanRequests = metrics.clean_requests || 0;
+  const redactedRequests = metrics.redacted_requests || 0;
+  const blockedRequests = metrics.blocked_requests || 0;
+  const totalViolations = metrics.total_violations || 0;
+  const violationFreq = metrics.violation_frequency_pct || 0;
+  const effectiveUse = metrics.effective_use_score || 0;
+  const authorityTrust = metrics.authority_trust_score || 0;
+  const trustTier = metrics.trust_tier || 'Tier 2: Trusted Operator';
+  const trustColor = metrics.trust_color || '#00f2fe';
+
+  const promptPct = totalTokens > 0 ? Math.round((promptTokens / totalTokens) * 100) : 0;
+  const complPct = totalTokens > 0 ? (100 - promptPct) : 0;
+
+  return (
+    <div style={{ display: 'grid', gap: '22px' }}>
+      {/* User Selection & Identity Strip */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '14px',
+        padding: '14px 20px',
+        background: 'rgba(12, 19, 39, 0.75)',
+        border: `1px solid ${C.border}`,
+        borderRadius: '12px',
+        backdropFilter: 'blur(16px)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: `linear-gradient(135deg, ${trustColor}44, #a855f744)`,
+            border: `1px solid ${trustColor}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.25rem',
+            boxShadow: `0 0 16px ${trustColor}33`,
+          }}>
+            🛡️
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#f8fafc' }}>
+                {data?.email || me?.email || 'User'}
+              </span>
+              <span style={{
+                fontSize: '0.72rem',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(0, 242, 254, 0.12)',
+                color: '#00f2fe',
+                border: '1px solid rgba(0, 242, 254, 0.3)',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+              }}>
+                {data?.role || me?.role || 'user'}
+              </span>
+              <span style={{
+                fontSize: '0.72rem',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(168, 85, 247, 0.12)',
+                color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                fontWeight: 600,
+              }}>
+                MODE: {data?.action_mode || 'REDACT'}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: C.faint, fontFamily: mono, marginTop: '2px' }}>
+              UUID: {selectedUuid || me?.user_uuid}
+            </div>
+          </div>
+        </div>
+
+        {isAdmin && users.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.82rem', color: C.muted }}>Inspect User:</span>
+            <select
+              value={selectedUuid}
+              onChange={e => setSelectedUuid(e.target.value)}
+              style={{ ...inputStyle, minWidth: '220px', cursor: 'pointer' }}
+            >
+              {users.map(u => (
+                <option key={u.user_uuid} value={u.user_uuid}>
+                  {u.email} ({u.role})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <Loader text="Calculating token metrics & authority-trust matrix…" />
+      ) : (
+        <>
+          {/* Top 4 Cyber KPI Tiles */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+            {/* 1. Authority-Trust Score */}
+            <div style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: '14px',
+              padding: '20px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(16px)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: `linear-gradient(90deg, ${trustColor}, #a855f7)` }} />
+              <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Authority-Trust Score
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
+                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: trustColor, fontFamily: mono }}>
+                  {authorityTrust}
+                </span>
+                <span style={{ fontSize: '1rem', color: C.faint }}>/ 100</span>
+              </div>
+              {/* Trust Tier Badge */}
+              <div style={{
+                display: 'inline-block',
+                padding: '3px 10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                color: trustColor,
+                background: `${trustColor}18`,
+                border: `1px solid ${trustColor}55`,
+                marginBottom: '10px',
+              }}>
+                {trustTier}
+              </div>
+              {/* Score bar */}
+              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(100, Math.max(0, authorityTrust))}%`, height: '100%', background: `linear-gradient(90deg, #f43f5e, #f59e0b 50%, ${trustColor} 85%)` }} />
+              </div>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+                Algorithmic zero-risk classification & compliance history
+              </div>
+            </div>
+
+            {/* 2. Violation Frequency */}
+            <div style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: '14px',
+              padding: '20px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(16px)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #f43f5e, #f59e0b)' }} />
+              <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Violation Frequency
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
+                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: totalViolations > 0 ? '#f43f5e' : '#10b981', fontFamily: mono }}>
+                  {violationFreq}%
+                </span>
+                <span style={{ fontSize: '0.85rem', color: C.faint }}>breach rate</span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
+                {totalViolations} violations across {totalRequests} requests
+              </div>
+              {/* Ratio bar */}
+              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${totalRequests > 0 ? (cleanRequests / totalRequests) * 100 : 100}%`, height: '100%', background: '#10b981' }} title={`Clean: ${cleanRequests}`} />
+                <div style={{ width: `${totalRequests > 0 ? (redactedRequests / totalRequests) * 100 : 0}%`, height: '100%', background: '#f59e0b' }} title={`Redacted: ${redactedRequests}`} />
+                <div style={{ width: `${totalRequests > 0 ? (blockedRequests / totalRequests) * 100 : 0}%`, height: '100%', background: '#f43f5e' }} title={`Blocked: ${blockedRequests}`} />
+              </div>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+                {cleanRequests} clean · {redactedRequests} redacted · {blockedRequests} blocked
+              </div>
+            </div>
+
+            {/* 3. Effective-Use Score */}
+            <div style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: '14px',
+              padding: '20px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(16px)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #00f2fe, #10b981)' }} />
+              <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Effective-Use Score
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
+                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#00f2fe', fontFamily: mono }}>
+                  {effectiveUse}%
+                </span>
+                <span style={{ fontSize: '0.85rem', color: C.faint }}>efficiency</span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
+                Compliant token ratio + policy adherence index
+              </div>
+              {/* Effective bar */}
+              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(100, Math.max(0, effectiveUse))}%`, height: '100%', background: 'linear-gradient(90deg, #38bdf8, #00f2fe)' }} />
+              </div>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+                Evaluates prompt utility vs breach remediation waste
+              </div>
+            </div>
+
+            {/* 4. Token Usage Tracking */}
+            <div style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: '14px',
+              padding: '20px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(16px)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #a855f7, #ec4899)' }} />
+              <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Tokens Tracked
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
+                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono }}>
+                  {totalTokens.toLocaleString()}
+                </span>
+                <span style={{ fontSize: '0.85rem', color: C.faint }}>tokens</span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
+                {promptTokens.toLocaleString()} prompt · {completionTokens.toLocaleString()} completion
+              </div>
+              {/* Token split bar */}
+              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${promptPct}%`, height: '100%', background: '#00f2fe' }} title={`Prompt: ${promptTokens}`} />
+                <div style={{ width: `${complPct}%`, height: '100%', background: '#a855f7' }} title={`Completion: ${completionTokens}`} />
+              </div>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+                Avg {avgTokens} tokens per request across all sessions
+              </div>
+            </div>
+          </div>
+
+          {/* Deep-Dive Grid: Token Tracking by Model & Compliance Matrix */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '18px' }}>
+            {/* Card 1: Per-User Token Tracking Across Requests & Models */}
+            <Card title="Token Usage Tracking Across All Requests">
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {/* Visual split box */}
+                <div style={{
+                  padding: '16px',
+                  background: 'rgba(6, 10, 24, 0.7)',
+                  border: `1px solid ${C.border}`,
+                  borderRadius: '10px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#00f2fe', fontWeight: 600 }}>Prompt Tokens: {promptTokens.toLocaleString()} ({promptPct}%)</span>
+                    <span style={{ color: '#a855f7', fontWeight: 600 }}>Completion Tokens: {completionTokens.toLocaleString()} ({complPct}%)</span>
+                  </div>
+                  <div style={{ width: '100%', height: '12px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${promptPct}%`, height: '100%', background: 'linear-gradient(90deg, #00f2fe, #38bdf8)' }} />
+                    <div style={{ width: `${complPct}%`, height: '100%', background: 'linear-gradient(90deg, #a855f7, #c084fc)' }} />
+                  </div>
+                </div>
+
+                {/* Clean Tokens vs Violation Tokens */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                }}>
+                  <div style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>Clean Tokens</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono, marginTop: '4px' }}>
+                      {cleanTokens.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '2px' }}>Zero-breach requests</div>
+                  </div>
+                  <div style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(244, 63, 94, 0.08)',
+                    border: '1px solid rgba(244, 63, 94, 0.25)',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: '#f43f5e', fontWeight: 600, textTransform: 'uppercase' }}>Remediated Tokens</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono, marginTop: '4px' }}>
+                      {violationTokens.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '2px' }}>Redacted/intercepted</div>
+                  </div>
+                </div>
+
+                {/* Model Breakdown */}
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>
+                    Token Consumption by Model
+                  </div>
+                  {Object.keys(modelUsage).length === 0 ? (
+                    <Empty>No model telemetry recorded yet.</Empty>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {Object.entries(modelUsage).map(([mName, mTokens]) => {
+                        const mPct = totalTokens > 0 ? Math.round((mTokens / totalTokens) * 100) : 0;
+                        return (
+                          <div key={mName} style={{
+                            padding: '10px 14px',
+                            background: 'rgba(6, 10, 24, 0.6)',
+                            border: `1px solid ${C.border}`,
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontFamily: mono, fontSize: '0.88rem', color: '#00f2fe', fontWeight: 600 }}>
+                                {mName}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                              <span style={{ fontSize: '0.85rem', fontFamily: mono, color: '#f8fafc' }}>
+                                {mTokens.toLocaleString()} tokens
+                              </span>
+                              <span style={{
+                                fontSize: '0.75rem',
+                                color: '#c084fc',
+                                background: 'rgba(168, 85, 247, 0.15)',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                              }}>
+                                {mPct}%
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Card 2: Authority-Trust & Risk Matrix */}
+            <Card title="Authority-Trust & Risk Evaluation Matrix">
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {/* Trust Status Callout */}
+                <div style={{
+                  padding: '16px',
+                  borderRadius: '12px',
+                  background: `linear-gradient(135deg, ${trustColor}12 0%, rgba(6, 10, 24, 0.8) 100%)`,
+                  border: `1px solid ${trustColor}55`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                }}>
+                  <div style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '10px',
+                    background: `${trustColor}22`,
+                    border: `1px solid ${trustColor}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.4rem',
+                    flex: 'none',
+                  }}>
+                    ⚡
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: trustColor }}>
+                      {trustTier}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: C.muted, marginTop: '2px', lineHeight: 1.5 }}>
+                      Composite score calculated from request volume ({totalRequests}), breach penalties, and token purity.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Score breakdown metrics */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', textAlign: 'center' }}>
+                  <div style={{ padding: '12px', background: 'rgba(6, 10, 24, 0.6)', border: `1px solid ${C.border}`, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.72rem', color: C.muted }}>COMPLIANCE RATE</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981', fontFamily: mono, marginTop: '4px' }}>
+                      {metrics.compliance_rate_pct || 0}%
+                    </div>
+                  </div>
+                  <div style={{ padding: '12px', background: 'rgba(6, 10, 24, 0.6)', border: `1px solid ${C.border}`, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.72rem', color: C.muted }}>TOTAL REQUESTS</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono, marginTop: '4px' }}>
+                      {totalRequests}
+                    </div>
+                  </div>
+                  <div style={{ padding: '12px', background: 'rgba(6, 10, 24, 0.6)', border: `1px solid ${C.border}`, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.72rem', color: C.muted }}>INTERCEPTIONS</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: totalViolations > 0 ? '#f43f5e' : '#10b981', fontFamily: mono, marginTop: '4px' }}>
+                      {totalViolations}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trust Tier Scale Reference */}
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: '8px' }}>
+                    TRUST TIER REFERENCE BENCHMARK
+                  </div>
+                  <div style={{ display: 'grid', gap: '6px', fontSize: '0.78rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust >= 88 ? 'rgba(16, 185, 129, 0.15)' : 'transparent', color: '#10b981' }}>
+                      <span>Tier 1: High Authority (Zero Risk)</span>
+                      <span style={{ fontFamily: mono, fontWeight: 700 }}>88 – 100</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust >= 70 && authorityTrust < 88 ? 'rgba(0, 242, 254, 0.15)' : 'transparent', color: '#00f2fe' }}>
+                      <span>Tier 2: Trusted Operator</span>
+                      <span style={{ fontFamily: mono, fontWeight: 700 }}>70 – 87</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust >= 50 && authorityTrust < 70 ? 'rgba(245, 158, 11, 0.15)' : 'transparent', color: '#f59e0b' }}>
+                      <span>Tier 3: Moderate Trust (Monitored)</span>
+                      <span style={{ fontFamily: mono, fontWeight: 700 }}>50 – 69</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust < 50 ? 'rgba(244, 63, 94, 0.15)' : 'transparent', color: '#f43f5e' }}>
+                      <span>Tier 4: Restricted (High Risk)</span>
+                      <span style={{ fontFamily: mono, fontWeight: 700 }}>&lt; 50</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+

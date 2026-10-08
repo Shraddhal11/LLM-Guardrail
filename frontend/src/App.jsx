@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
 import { Loader3D } from './ui.jsx';
-import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, Segmented } from './views.jsx';
+import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
 
@@ -71,6 +71,8 @@ function parseUrl(path, searchStr) {
     return { page: 'activity', params: { view, scope, event, session } };
   } else if (path.startsWith('/users')) {
     return { page: 'users', params: {} };
+  } else if (path.startsWith('/trust')) {
+    return { page: 'trust', params: {} };
   } else if (path.startsWith('/test')) {
     return { page: 'test', params: {} };
   }
@@ -88,6 +90,7 @@ function navToUrl(page, params = {}) {
   if (page === 'activity') return `/activity${query}`;
   if (page === 'users') return `/users${query}`;
   if (page === 'user') return `/users${query}`;
+  if (page === 'trust') return `/trust${query}`;
   if (page === 'test') return `/test${query}`;
   return `/overview${query}`;
 }
@@ -153,12 +156,14 @@ function Dashboard() {
     ? [
         { key: 'overview', label: 'Overview' },
         { key: 'activity', label: 'Activity' },
+        { key: 'trust', label: 'Trust & Tokens' },
         { key: 'users', label: 'Users' },
         { key: 'test', label: 'Test' },
       ]
     : [
         { key: 'overview', label: 'Overview' },
         { key: 'activity', label: 'Activity' },
+        { key: 'trust', label: 'Trust & Tokens' },
         { key: 'test', label: 'Test' },
       ];
 
@@ -169,6 +174,7 @@ function Dashboard() {
   const titles = {
     overview: 'Overview',
     activity: view === 'sessions' ? (isAdmin && !showMe ? 'All sessions' : 'Sessions') : (isAdmin && !showMe ? 'All requests' : 'Requests'),
+    trust: 'Trust & Token Analytics',
     users: 'Users',
     user: nav.params.user?.email || 'User',
     test: 'Test a prompt',
@@ -176,6 +182,7 @@ function Dashboard() {
   const subtitles = {
     overview: isAdmin && !showMe ? 'System-wide activity' : 'Your activity and how PII is handled',
     activity: view === 'sessions' ? 'Tasks and conversations, then their requests' : 'Every request, with its decision and details',
+    trust: 'Per-user token usage tracking across all requests, authority-trust, violation frequency, effective-use score',
     users: 'Search and open a user',
     user: 'Sessions, logs and categories for this user',
     test: 'Check a prompt without sending it to the model',
@@ -199,6 +206,8 @@ function Dashboard() {
     content = view === 'sessions'
       ? <SessionsView authedFetch={authedFetch} uuid={uuid} showUser={!showMe} initialSession={nav.params.session || null} />
       : <LogsView authedFetch={authedFetch} uuid={uuid} initialEvent={nav.params.event || null} onOpenSession={openSession} />;
+  } else if (nav.page === 'trust') {
+    content = <TrustAnalyticsView authedFetch={authedFetch} me={me} isAdmin={isAdmin} initialUuid={nav.params.user_uuid || null} />;
   } else if (nav.page === 'users' && isAdmin) {
     content = <UsersView authedFetch={authedFetch} onOpenUser={u => go('user', { user: u })} />;
   } else if (nav.page === 'user' && isAdmin && nav.params.user) {
