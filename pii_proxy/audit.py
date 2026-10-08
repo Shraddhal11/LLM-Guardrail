@@ -176,18 +176,17 @@ class AuditLogger:
                 events = events.filter(DBUser.user_uuid == user_uuid)
                 findings = findings.filter(DBUser.user_uuid == user_uuid)
 
-            action = func.coalesce(DBEvent.action_mode, "UNKNOWN")
             rows = (
                 events.with_entities(
                     DBEvent.decision,
-                    action,
+                    DBEvent.action_mode,
                     func.count(DBEvent.id),
                     func.coalesce(func.sum(DBEvent.pii_count), 0),
                     func.coalesce(func.sum(DBEvent.prompt_tokens), 0),
                     func.coalesce(func.sum(DBEvent.completion_tokens), 0),
                     func.coalesce(func.sum(DBEvent.latency_ms), 0),
                 )
-                .group_by(DBEvent.decision, action)
+                .group_by(DBEvent.decision, DBEvent.action_mode)
                 .all()
             )
             tokens_in = tokens_out = 0
@@ -201,7 +200,8 @@ class AuditLogger:
             for decision, action_name, n, pii, t_in, t_out, lat in rows:
                 latency_sum += float(lat or 0)
                 decision_counts[decision] = decision_counts.get(decision, 0) + n
-                action_counts[action_name] = action_counts.get(action_name, 0) + n
+                key = action_name or "UNKNOWN"
+                action_counts[key] = action_counts.get(key, 0) + n
                 total += n
                 pii_total += int(pii)
                 tokens_in += int(t_in)
