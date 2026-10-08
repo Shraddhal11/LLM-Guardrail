@@ -70,7 +70,7 @@ export function Loader({ text = 'Loading data…' }) {
   );
 }
 
-export function Loader3D({ title = 'Initializing Governance Engine...', subtitle = 'Syncing session state • Verifying cryptographic keys' }) {
+export function Loader3D({ title = 'Initializing Governance Engine...', subtitle = 'Syncing session state' }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'radial-gradient(circle at center, #0f172a 0%, #060913 75%)', textAlign: 'center', padding: '20px', fontFamily: "'Outfit', system-ui, sans-serif" }}>
       <div style={{ position: 'relative', width: '120px', height: '120px', perspective: '1000px', transformStyle: 'preserve-3d', marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
