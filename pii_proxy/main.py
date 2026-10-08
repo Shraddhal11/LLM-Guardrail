@@ -647,12 +647,27 @@ async def sync_user(req: UserSyncRequest, request: Request, claims: dict = Depen
     try:
         user = db.query(DBUser).filter(DBUser.clerk_user_id == claims["sub"]).first()
         if not user:
+            user_email = (req.email or "").strip().lower()
+            if user_email:
+                user = db.query(DBUser).filter(func.lower(DBUser.email) == user_email).first()
+                if user:
+                    user.clerk_user_id = claims["sub"]
+                    if req.name and not user.name:
+                        user.name = req.name
+                    if user_email == "admin@jashds.com":
+                        user.role = "admin"
+                    db.commit()
+                    db.refresh(user)
+
+        if not user:
             u_uuid = f"usr_{uuid.uuid4().hex[:8]}"
+            assigned_role = "admin" if (req.email and req.email.strip().lower() == "admin@jashds.com") else "user"
             user = DBUser(
                 clerk_user_id=claims["sub"],
                 email=req.email or f"{req.clerk_user_id}@noemail.local",
                 name=req.name,
                 user_uuid=u_uuid,
+                role=assigned_role,
             )
             db.add(user)
             db.commit()
