@@ -56,7 +56,7 @@ anonymizer = PIIAnonymizer(detector=detector)
 
 class TestInspectRequest(BaseModel):
     prompt: str
-    mode: Optional[str] = "ANONYMIZE"
+    mode: Optional[str] = "REDACT"
     user_id: Optional[str] = "user_demo"
 
 class UserSyncRequest(BaseModel):
@@ -323,7 +323,7 @@ async def admin_activity(limit: int = 50, violations_only: bool = False, admin: 
 class UserActionModeRequest(BaseModel):
     mode: Optional[str] = None
 
-VALID_MODES = {"ANONYMIZE", "REDACT", "HASH", "BLOCK", "LOG_ONLY"}
+VALID_MODES = {"REDACT", "BLOCK", "HASH", "LOG_ONLY"}
 
 @app.put("/api/users/{user_uuid}/action-mode")
 async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user: DBUser = Depends(get_current_user)):
@@ -629,7 +629,7 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     """Inspect and anonymize a prompt. The event is recorded against the signed-in user."""
     vault = PIISessionVault()
     start_time = time.time()
-    mode = req.mode or "ANONYMIZE"
+    mode = req.mode or "REDACT"
 
     try:
         anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode)
@@ -771,7 +771,7 @@ async def get_action_mode():
 
 @app.post("/api/config/action-mode")
 async def update_action_mode(req: ConfigUpdateModeRequest):
-    valid_modes = ["ANONYMIZE", "REDACT", "HASH", "BLOCK", "LOG_ONLY"]
+    valid_modes = ["REDACT", "BLOCK", "HASH", "LOG_ONLY"]
     mode = req.mode.upper()
     if mode not in valid_modes:
         raise HTTPException(status_code=400, detail=f"Invalid action mode. Must be one of {valid_modes}")

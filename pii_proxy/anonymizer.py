@@ -34,11 +34,10 @@ class PIISessionVault:
 
 class PIIAnonymizer:
     """
-    Applies configurable compliance actions to detected PII:
-    - ANONYMIZE: Replace with reversible placeholder [NAME_1], [EMAIL_1]
-    - REDACT: Replace with static [REDACTED]
-    - HASH: Replace with [HASH:sha256...]
+    Applies 4 configurable compliance actions to detected PII:
+    - REDACT: Replace with static [REDACTED_TYPE]
     - BLOCK: Raise error / reject request if PII found
+    - HASH: Replace with [HASH:sha256...]
     - LOG_ONLY: Keep original text, but log detection
     """
 
@@ -49,7 +48,7 @@ class PIIAnonymizer:
         self,
         text: str,
         vault: PIISessionVault,
-        mode: str = "ANONYMIZE"
+        mode: str = "REDACT"
     ) -> Tuple[str, List[PIIMatch]]:
         """
         Process text, replace detected PII based on mode, and return anonymized text + list of matches.
@@ -69,14 +68,10 @@ class PIIAnonymizer:
         sorted_matches = sorted(matches, key=lambda x: x.start, reverse=True)
 
         for match in sorted_matches:
-            if mode == "ANONYMIZE":
-                replacement = vault.get_or_create_placeholder(match.text, match.entity_type)
-            elif mode == "REDACT":
-                replacement = f"[REDACTED_{match.entity_type}]"
-            elif mode == "HASH":
+            if mode == "HASH":
                 h = hashlib.sha256(match.text.encode()).hexdigest()[:8]
                 replacement = f"[HASH:{h}]"
-            else:
+            else: # REDACT or fallback
                 replacement = f"[REDACTED_{match.entity_type}]"
 
             result_chars[match.start:match.end] = list(replacement)

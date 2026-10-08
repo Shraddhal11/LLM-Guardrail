@@ -445,9 +445,11 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
 
   const d = stats?.decision_counts || {};
   const modes = [
-    ['', 'Global default'], ['ANONYMIZE', 'Anonymize: placeholders, restored in the reply'],
-    ['REDACT', 'Redact: remove PII'], ['HASH', 'Hash: replace with a hash'],
-    ['BLOCK', 'Block: reject the request'], ['LOG_ONLY', 'Log only: send as-is, record it'],
+    ['', 'Global default'],
+    ['REDACT', 'Redact: static [REDACTED] replacement'],
+    ['BLOCK', 'Block: reject prompt with HTTP 400'],
+    ['HASH', 'Hash: SHA-256 hash replacement'],
+    ['LOG_ONLY', 'Log only: send as-is, record in audit log'],
   ];
 
   return (
@@ -601,7 +603,7 @@ export function TestView({ authedFetch }) {
       const r = await authedFetch('/api/test-inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, mode: 'ANONYMIZE' }),
+        body: JSON.stringify({ prompt, mode: 'REDACT' }),
       });
       setResult(await r.json());
     } finally {
