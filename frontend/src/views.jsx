@@ -1,32 +1,78 @@
 import React, { useEffect, useState } from 'react';
 import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, mono } from './ui.jsx';
 
-const inputStyle = { background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '7px 10px', fontSize: '0.88rem' };
-const btn = { background: C.accent, color: '#06241f', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: 600, cursor: 'pointer' };
-const cellTh = { textAlign: 'left', padding: '9px 10px', color: C.muted, fontSize: '0.78rem', fontWeight: 500, borderBottom: `1px solid ${C.border}` };
-const cellTd = { padding: '11px 10px', fontSize: '0.88rem', borderBottom: `1px solid ${C.border}` };
+const inputStyle = {
+  background: 'rgba(6, 10, 24, 0.75)',
+  color: '#f8fafc',
+  border: `1px solid rgba(56, 189, 248, 0.2)`,
+  borderRadius: '8px',
+  padding: '8px 12px',
+  fontSize: '0.88rem',
+  outline: 'none',
+  boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.4)',
+};
+const btn = {
+  background: 'linear-gradient(135deg, #00f2fe 0%, #38bdf8 100%)',
+  color: '#041324',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '9px 18px',
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: '0.88rem',
+  boxShadow: '0 0 16px rgba(0, 242, 254, 0.35)',
+  letterSpacing: '0.01em',
+};
+const cellTh = {
+  textAlign: 'left',
+  padding: '11px 12px',
+  color: '#94a3b8',
+  fontSize: '0.78rem',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  borderBottom: `1px solid ${C.border}`,
+};
+const cellTd = {
+  padding: '12px',
+  fontSize: '0.88rem',
+  borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+};
 
 export function Segmented({ value, options, onChange }) {
   return (
-    <div style={{ display: 'inline-flex', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '3px' }}>
-      {options.map(([key, label]) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          style={{
-            background: value === key ? C.border : 'transparent',
-            color: value === key ? C.text : C.muted,
-            border: 'none',
-            borderRadius: '6px',
-            padding: '6px 14px',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          {label}
-        </button>
-      ))}
+    <div style={{
+      display: 'inline-flex',
+      background: 'rgba(6, 10, 24, 0.85)',
+      border: `1px solid ${C.border}`,
+      borderRadius: '10px',
+      padding: '4px',
+      backdropFilter: 'blur(12px)',
+      boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.5)',
+    }}>
+      {options.map(([key, label]) => {
+        const active = value === key;
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            style={{
+              background: active ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.2) 0%, rgba(168, 85, 247, 0.12) 100%)' : 'transparent',
+              color: active ? '#ffffff' : '#94a3b8',
+              border: active ? '1px solid rgba(0, 242, 254, 0.4)' : '1px solid transparent',
+              borderRadius: '8px',
+              padding: '6px 16px',
+              fontSize: '0.84rem',
+              fontWeight: active ? 700 : 500,
+              cursor: 'pointer',
+              boxShadow: active ? '0 0 12px rgba(0, 242, 254, 0.25)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -476,9 +522,23 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: '18px', alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: '18px' }}>
-          <Card title="Your proxy link" action={<button onClick={() => { navigator.clipboard.writeText(proxyUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }} style={btn}>{copied ? 'Copied' : 'Copy'}</button>}>
-            <div style={{ fontFamily: mono, color: C.accent, fontSize: '0.92rem', wordBreak: 'break-all' }}>{proxyUrl}</div>
-            <div style={{ color: C.faint, fontSize: '0.82rem', marginTop: '10px' }}>Use this in Cline, Open WebUI or LangChain as the OpenAI base URL.</div>
+          <Card title="Your proxy link" action={<button onClick={() => { navigator.clipboard.writeText(proxyUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }} style={btn}>{copied ? '✓ Copied' : 'Copy link'}</button>}>
+            <div style={{
+              fontFamily: mono,
+              color: C.accent,
+              fontSize: '0.88rem',
+              wordBreak: 'break-all',
+              background: 'rgba(0, 242, 254, 0.06)',
+              border: '1px solid rgba(0, 242, 254, 0.22)',
+              borderRadius: '8px',
+              padding: '12px 14px',
+              boxShadow: 'inset 0 0 12px rgba(0, 242, 254, 0.05)',
+            }}>
+              {proxyUrl}
+            </div>
+            <div style={{ color: C.muted, fontSize: '0.82rem', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: C.accent }}>⚡</span> Compatible with Cline, Cursor, Open WebUI, and LangChain OpenAI base URLs.
+            </div>
           </Card>
           <Card title="How PII is handled for you">
             <select value={mode} onChange={e => saveMode(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
