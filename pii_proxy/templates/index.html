@@ -1020,7 +1020,7 @@
             document.getElementById('detail-meta').textContent = `Endpoint: ${q.endpoint || '/v1/chat/completions'} • Created: ${q.created_at ? new Date(q.created_at).toLocaleString() : 'Just Now'}`;
             document.getElementById('detail-pii-count').textContent = q.pii_count || 0;
             document.getElementById('detail-latency').textContent = `${q.latency_ms || 0} ms`;
-            document.getElementById('detail-action-mode').textContent = q.action_mode || 'ANONYMIZE';
+            document.getElementById('detail-action-mode').textContent = q.action_mode || 'REDACT';
             document.getElementById('detail-model').textContent = q.model || 'nvidia/Qwen3.6-35B';
 
             document.getElementById('detail-orig-prompt').textContent = q.original_prompt || 'No prompt content recorded';
