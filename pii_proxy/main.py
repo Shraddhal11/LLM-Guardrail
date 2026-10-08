@@ -629,7 +629,7 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     """Inspect and anonymize a prompt. The event is recorded against the signed-in user."""
     vault = PIISessionVault()
     start_time = time.time()
-    mode = req.mode or "REDACT"
+    mode = req.mode if (req.mode and req.mode != "DEFAULT") else _action_mode_for(request, user.user_uuid)
 
     try:
         anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode)
