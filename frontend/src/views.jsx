@@ -459,6 +459,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [violations, setViolations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const syncMode = async () => {
@@ -487,6 +488,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     if (s.ok) setStats(await s.json());
     if (t.ok) setTokens(await t.json());
     if (q.ok) setViolations((await q.json()).filter(r => r.decision !== 'allow').slice(0, 8));
+    setLoading(false);
   }, [uuid, authedFetch]);
 
   const saveMode = async (value) => {
@@ -499,6 +501,10 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     setSaved(res.ok ? 'Saved' : `Could not save (HTTP ${res.status})`);
     setTimeout(() => setSaved(''), 2000);
   };
+
+  if (loading && !stats) {
+    return <Loader text="Loading overview metrics…" />;
+  }
 
   const d = stats?.decision_counts || {};
   const modes = [
@@ -580,6 +586,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
   const [users, setUsers] = useState([]);
   const [attention, setAttention] = useState([]);
   const [sessionCount, setSessionCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const [s, u, a, ss] = await Promise.all([
@@ -593,7 +600,12 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
     if (u.ok) setUsers(await u.json());
     if (a.ok) setAttention(await a.json());
     if (ss.ok) setSessionCount((await ss.json()).length);
+    setLoading(false);
   }, [authedFetch]);
+
+  if (loading && !stats) {
+    return <Loader text="Loading Overview…" />;
+  }
 
   const d = stats?.decision_counts || {};
   const avgTokensPerSession = sessionCount ? Math.round((stats?.total_tokens || 0) / sessionCount) : 0;
