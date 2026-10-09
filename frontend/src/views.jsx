@@ -330,10 +330,16 @@ export function UsersView({ authedFetch, onOpenUser }) {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('violations');
   const [shown, setShown] = useState(10);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const r = await authedFetch('/api/admin/users');
-    if (r.ok && !isCancelled()) setUsers(await r.json());
+    if (r.ok && !isCancelled()) {
+      setUsers(await r.json());
+      setLoading(false);
+    } else if (!isCancelled()) {
+      setLoading(false);
+    }
   }, [authedFetch], 15000);
 
   const q = query.trim().toLowerCase();
@@ -366,7 +372,11 @@ export function UsersView({ authedFetch, onOpenUser }) {
         </div>
       }
     >
-      {list.length === 0 ? <Empty>No users match.</Empty> : (
+      {loading ? (
+        <Loader text="Loading Users Details…" />
+      ) : list.length === 0 ? (
+        <Empty>No users match.</Empty>
+      ) : (
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -418,6 +428,7 @@ export function UsersView({ authedFetch, onOpenUser }) {
 export function UserView({ authedFetch, user, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const [s, t] = await Promise.all([
@@ -427,7 +438,12 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
     if (isCancelled()) return;
     if (s.ok) setStats(await s.json());
     if (t.ok) setTokens(await t.json());
+    setLoading(false);
   }, [user.user_uuid, authedFetch]);
+
+  if (loading && !stats) {
+    return <Loader text="Loading user details from database…" />;
+  }
 
   const d = stats?.decision_counts || {};
   return (
@@ -744,7 +760,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         .then(u => {
           if (Array.isArray(u)) setUsers(u);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isAdmin, authedFetch]);
 
